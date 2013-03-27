@@ -116,10 +116,9 @@
   (with-slots ((well-x x) (well-y y) color) piece
     (let ((xy   (well->absolute-coordinates well-x  well-y))
           (dxdy (well->absolute-coordinates well-dx well-dy)))
-      (destructuring-bind ((x y) (dx dy)) (list xy dxdy)
         (funcall drawing-func 
-                 (floor (+ x dx))
-                 (floor (+ y dy))
+                 (floor (+ (car xy) (car dxdy)))
+                 (floor (+ (cdr xy) (cdr dxdy)))
                  (first *piece-dimensions*)
                  (second *piece-dimensions*)
                  :color color)))))
@@ -198,30 +197,32 @@
 (defun handle-tetromino-movement-down (well curr-tetromino)
   (let ((moving-result (move-tetromino-down well curr-tetromino)))
     (if (eq (car moving-result) :was-moved)
-        (list well (cdr moving-result))
-        (list (integrate-tetromino-to-well curr-tetromino well)
+        (cons well (cdr moving-result))
+        (cons (integrate-tetromino-to-well curr-tetromino well)
               (spawn-next-tetromino)))))
 
 (defun handle-tetromino-dropping (well curr-tetromino)
   (let* ((dropped-tetromino (drop-tetromino well curr-tetromino))
          (new-well (integrate-tetromino-to-well dropped-tetromino well)))
-    (list new-well (spawn-next-tetromino))))
+    (cons new-well (spawn-next-tetromino))))
 
 (defun handle-tetromino-movement-key (key)
   (with-slots (well curr-tetromino) *game*
-    (destructuring-bind (new-well new-tetromino)
-        (case key
-          (:sdl-key-e     (list well (rotate-tetromino-cw       well curr-tetromino)))
-          (:sdl-key-w     (list well (rotate-tetromino-ccw      well curr-tetromino)))
-          (:sdl-key-left  (list well (cdr (move-tetromino-left  well curr-tetromino))))
-          (:sdl-key-right (list well (cdr (move-tetromino-right well curr-tetromino))))
-          (:sdl-key-down  (handle-tetromino-movement-down       well curr-tetromino))
-          (:sdl-key-space (handle-tetromino-dropping            well curr-tetromino))
-          (otherwise (list nil nil)))
-      (when (not (null new-well))
-        (replace-well *game* new-well))
-      (when (not (null new-tetromino))
-        (replace-curr-tetromino *game* new-tetromino)))))
+    (let ((movement-result
+           (case key
+             (:sdl-key-e     (cons well (rotate-tetromino-cw       well curr-tetromino)))
+             (:sdl-key-w     (cons well (rotate-tetromino-ccw      well curr-tetromino)))
+             (:sdl-key-left  (cons well (cdr (move-tetromino-left  well curr-tetromino))))
+             (:sdl-key-right (cons well (cdr (move-tetromino-right well curr-tetromino))))
+             (:sdl-key-down  (handle-tetromino-movement-down       well curr-tetromino))
+             (:sdl-key-space (handle-tetromino-dropping            well curr-tetromino))
+             (otherwise (cons nil nil)))))
+      (let ((new-well      (car movement-result))
+            (new-tetromino (cdr movement-result)))
+        (when (not (null new-well))
+          (replace-well *game* new-well))
+        (when (not (null new-tetromino))
+          (replace-curr-tetromino *game* new-tetromino))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; well stuff
@@ -257,12 +258,10 @@
       (+ parent-y piece-y))))
 
 (defun well->absolute-coordinates (x y)
-  "Takes well coordinates and returns list where (first result) is x
-  and (second result) is y in absolute surface coordinates"
-  (list (* x (first *piece-dimensions*)) (* y (second *piece-dimensions*))))
+  (cons (* x (first *piece-dimensions*)) (* y (second *piece-dimensions*))))
 
 (defun piece-well-position (parent-tetromino piece)
-  (list (piece-well-x parent-tetromino piece)
+  (cons (piece-well-x parent-tetromino piece)
         (piece-well-y parent-tetromino piece)))
 
 (defun clone-well (old-well)
@@ -282,9 +281,9 @@
       (with-slots ((tetromino-pieces pieces)) tetromino
         (dolist (piece tetromino-pieces)
           (with-slots ((rel-x x) (rel-y y)) piece
-            (destructuring-bind (abs-x abs-y) (piece-well-position tetromino piece)
-              (setf (aref well-pieces (+ abs-x 
-                                         (* abs-y (well-width new-well))))
+            (let ((abs-pos (piece-well-position tetromino piece)))
+              (setf (aref well-pieces (+ (car abs-pos) 
+                                         (* (cdr abs-pos) (well-width new-well))))
                     piece)
               (setf rel-x 0)
               (setf rel-y 0))))))
@@ -458,11 +457,12 @@
   (with-slots ((well-pieces pieces)) well
     (with-slots ((tetromino-pieces pieces)) tetromino
       (dolist (tetromino-piece tetromino-pieces)
-        (destructuring-bind (tetromino-piece-x tetromino-piece-y) 
-            (piece-well-position tetromino tetromino-piece)
-          (when (point-inside-of-well-p well tetromino-piece-x tetromino-piece-y)
-            (when (not (null (aref well-pieces (+ tetromino-piece-x 
-                                                  (* tetromino-piece-y
+        (let ((tetromino-piece-pos (piece-well-position tetromino tetromino-piece)))
+          (when (point-inside-of-well-p well 
+                                        (car tetromino-piece-pos) 
+                                        (cdr tetromino-piece-pos))
+            (when (not (null (aref well-pieces (+ (car tetromino-piece-pos) 
+                                                  (* (cdr tetromino-piece-pos)
                                                      (well-width well))))))
               (return t))))))))
 
