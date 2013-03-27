@@ -94,8 +94,8 @@
   (with-slots (curr-tetromino well) *game*
     (let* ((well-and-tetromino (update-tetromino curr-tetromino well))
            (moved-tetromino    (cdr well-and-tetromino))
-           (cleared-well       (clear-lines (car well-and-tetromino))))
-      (replace-well *game* cleared-well)
+           (clearing-result    (clear-lines (car well-and-tetromino))))
+      (replace-well *game* (cdr clearing-result))
       (replace-curr-tetromino *game* moved-tetromino))))
 
 (defparameter *falling-counter-threshold* 15)
@@ -310,11 +310,11 @@
 (defun clear-lines (well)
   (let ((new-well (clone-well well))
         (filled-lines (loop for y from 0 to (1- (well-height well))
-                         when (filled-line-p well y) collecting y)))
-                                        ;(print filled-lines)
-    (mapc (curry #'clear-line-n new-well) filled-lines)
-    new-well))
-
+                         when (filled-line-p well y) 
+                         collect y into lines and count y into lines-num
+                         finally (return (cons lines lines-num)))))
+    (mapc (curry #'clear-line-n new-well) (car filled-lines))
+    (cons (cdr filled-lines) new-well)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; piece stuff
