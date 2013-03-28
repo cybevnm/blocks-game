@@ -64,14 +64,25 @@
                (sdl:update-display))))))
  
 (defclass blocks-game ()
-  ((well           :initform (make-instance 'well))
-   (curr-tetromino :initform nil)))
+  ((well              :initform (make-instance 'well))
+   (curr-tetromino    :initform nil)
+   (single-clears-num :initform 0)
+   (double-clears-num :initform 0)
+   (triple-clears-num :initform 0)
+   (tetrises-num      :initform 0)))
 
 (defmethod initialize-instance :after ((game blocks-game) &key)
   (replace-curr-tetromino game (make-tetromino-of-type 'L 5 0 sdl:*green*)))
 
 (defun replace-curr-tetromino (game tetromino)
   (setf (slot-value game 'curr-tetromino) tetromino))
+
+(defun add-clear (game lines-cleared)
+  (incf (slot-value game (ecase lines-cleared
+                           (1 'single-clears-num)
+                           (2 'double-clears-num)
+                           (3 'triple-clears-num)
+                           (4 'tetrises-num)))))
 
 (defun spawn-next-tetromino ()
   (make-tetromino-of-type 'L 5 0 sdl:*green*))
@@ -96,7 +107,9 @@
            (moved-tetromino    (cdr well-and-tetromino))
            (clearing-result    (clear-lines (car well-and-tetromino))))
       (replace-well *game* (cdr clearing-result))
-      (replace-curr-tetromino *game* moved-tetromino))))
+      (replace-curr-tetromino *game* moved-tetromino)
+      (when (> (car clearing-result) 0) 
+        (add-clear *game* (car clearing-result))))))
 
 (defparameter *falling-counter-threshold* 15)
 
@@ -121,7 +134,7 @@
                  (floor (+ (cdr xy) (cdr dxdy)))
                  (first *piece-dimensions*)
                  (second *piece-dimensions*)
-                 :color color)))))
+                 :color color))))
 
 (defun draw-filled-piece (piece &optional (well-dx 0) (well-dy 0))
   (draw-piece #'sdl:draw-box-* piece well-dx well-dy))
