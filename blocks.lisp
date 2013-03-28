@@ -181,10 +181,10 @@
     (draw-projected-tetromino (drop-tetromino well curr-tetromino))))
 
 (defun draw-well-border (well well-window-pos)
-  (sdl:draw-rectangle-* (car well-window-pos)
-                        (cdr well-window-pos)
-                        (car (well-absolute-size well))
-                        (cdr (well-absolute-size well))))
+  (sdl:draw-rectangle-* (1- (car well-window-pos))
+                        (1- (cdr well-window-pos))
+                        (+ (car (well-absolute-size well)) 3)
+                        (+ (cdr (well-absolute-size well)) 3)))
 
 (defun draw-well-pieces (well well-window-pos)
   (with-slots (pieces) well
