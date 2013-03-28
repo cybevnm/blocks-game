@@ -16,14 +16,21 @@
 (declaim (optimize (speed 0) (safety 3) (debug 3)))
 
 (in-package :blocks-game)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; constants
 
-(defparameter *well-dimensions*  '(10 22))
-(defparameter *piece-dimensions* '(15 15))
+
+
+(defparameter *well-dimensions*  '(10 . 22))
+(defparameter *piece-dimensions* '(15 . 15))
 (defparameter *background-color*  sdl:*black*)
 (defparameter *well-grid-color*   (sdl:color :r 128 :g 128 :b 128))
 (defparameter *curr-frame-index*  0)
+
+(defparameter *margin* 20)
+(defparameter *stats-width* 50)
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; common stuff
@@ -31,6 +38,25 @@
 (defun curry (function &rest args)
     (lambda (&rest more-args)
       (apply function (append args more-args))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; layout
+
+(defun calc-window-size ()
+  (cons (+ *margin*
+           *stats-width*
+           *margin*
+           (* (car *well-dimensions*) (car *piece-dimensions*))
+           *margin*)
+        (+ *margin*
+           (* (cdr *well-dimensions*) (cdr *piece-dimensions*))
+           *margin*)))
+
+(defun stats-window-pos ()
+  (cons *margin* *margin*))
+
+(defun well-window-pos ()
+  (cons (+ *margin* *stats-width* *margin*) *margin*))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; game stuff
@@ -42,12 +68,9 @@
 (defun blocks-main ()
   (sdl:with-init ()
     (let ((*game* (make-instance 'blocks-game))
-          (window-width (* (first *well-dimensions*) 
-                           (first *piece-dimensions*)))
-          (window-height (* (second *well-dimensions*) 
-                            (second *piece-dimensions*))))
-      (sdl:window window-width 
-                  window-height 
+          (window-size (calc-window-size)))
+      (sdl:window (car window-size) 
+                  (cdr window-size)
                   :fps (make-instance 'sdl:fps-fixed
                                       :target-frame-rate 30))
       (sdl:enable-key-repeat 100 50)
@@ -125,22 +148,21 @@
            (cons well 
                  (make-tetromino x y center pieces (1+ falling-counter)))))))
 
-(defun draw-piece (drawing-func piece &optional (well-dx 0) (well-dy 0))
-  (with-slots ((well-x x) (well-y y) color) piece
-    (let ((xy   (well->absolute-coordinates well-x  well-y))
-          (dxdy (well->absolute-coordinates well-dx well-dy)))
-        (funcall drawing-func 
-                 (floor (+ (car xy) (car dxdy)))
-                 (floor (+ (cdr xy) (cdr dxdy)))
-                 (first *piece-dimensions*)
-                 (second *piece-dimensions*)
-                 :color color))))
+(defun draw-piece (drawing-func piece &optional (well-x 0) (well-y 0))
+  (with-slots (x y color) piece
+    (let ((well-xy (well->absolute-coordinates well-x well-y)))
+      (funcall drawing-func 
+               (floor (+ (car well-xy) (* x (car *piece-dimensions*))))
+               (floor (+ (cdr well-xy) (* y (cdr *piece-dimensions*))))
+               (car *piece-dimensions*)
+               (cdr *piece-dimensions*)
+               :color color))))
 
-(defun draw-filled-piece (piece &optional (well-dx 0) (well-dy 0))
-  (draw-piece #'sdl:draw-box-* piece well-dx well-dy))
+(defun draw-filled-piece (piece &optional (well-x 0) (well-y 0))
+  (draw-piece #'sdl:draw-box-* piece well-x well-y))
 
-(defun draw-projected-piece (piece &optional (well-dx 0) (well-dy 0))
-  (draw-piece #'sdl:draw-rectangle-* piece well-dx well-dy))
+(defun draw-projected-piece (piece &optional (well-x 0) (well-y 0))
+  (draw-piece #'sdl:draw-rectangle-* piece well-x well-y))
 
 (defun draw-tetromino (drawing-func tetromino)
   (with-slots (x y color pieces) tetromino
@@ -158,36 +180,47 @@
     (draw-filled-tetromino curr-tetromino)
     (draw-projected-tetromino (drop-tetromino well curr-tetromino))))
 
-(defun draw-well-pieces (well)
+(defun draw-well-border (well well-window-pos)
+  (sdl:draw-rectangle-* (car well-window-pos)
+                        (cdr well-window-pos)
+                        (car (well-absolute-size well))
+                        (cdr (well-absolute-size well))))
+
+(defun draw-well-pieces (well well-window-pos)
   (with-slots (pieces) well
-    (destructuring-bind (w h) (well-size well)
+    (let ((w (well-width well))
+          (h (well-height well)))
       (dotimes (y h)
         (dotimes (x w)
           (unless (null (aref pieces (+ x (* y w))))
             (draw-filled-piece (aref pieces (+ x (* y w))) x y)))))))
 
 (defun draw-well-grid (well)
-  (destructuring-bind (w h) (well-size well)
+  (let ((v-lines-num (1- (well-width  well)))
+        (h-lines-num (1- (well-height well)))
+        (well-pos (well-window-pos)))
     ;; vertical lines
-    (dotimes (x w)
-      (sdl:draw-vline (* (first *piece-dimensions*) x)
-                      0
-                      (second (well-absolute-size well))
+    (dotimes (x v-lines-num)
+      (sdl:draw-vline (+ (car well-pos) (* (car *piece-dimensions*) (1+ x)))
+                      (cdr well-pos)
+                      (+ (cdr well-pos) (cdr (well-absolute-size well)))
                       :color *well-grid-color*))
     ;; horizontal lines
-    (dotimes (y h)
-      (sdl:draw-hline 0
-                      (first (well-absolute-size well)) 
-                      (* (second *piece-dimensions*) y)
+    (dotimes (y h-lines-num)
+      (sdl:draw-hline (car well-pos)
+                      (+ (car well-pos) (car (well-absolute-size well)))
+                      (+ (cdr well-pos) (* (cdr *piece-dimensions*) (1+ y)))
                       :color *well-grid-color*))))
 
 (defun draw-well (well)
-  (draw-well-pieces well)
+  (draw-well-border well (well-window-pos))
+  (draw-well-pieces well (well-window-pos))
   (draw-well-grid   well))
 
 (defun dump-well-to-stdout (well)
   (with-slots (pieces) well
-    (destructuring-bind (w h) (well-size well)
+    (let ((w (well-width  well))
+          (h (well-height well)))
       (dotimes (y h)
         (format t "~%")
         (dotimes (x w)
@@ -242,7 +275,7 @@
 
 (defclass well ()
   ((pieces :initform (make-array (* (car *well-dimensions*) 
-                                    (cadr *well-dimensions*))
+                                    (cdr *well-dimensions*))
                                  :initial-element nil)	   
            :initarg :pieces))
   (:documentation "Well is main game area where tetrominos falls to bottom"))
@@ -255,10 +288,11 @@
   (car (well-size well)))
 
 (defun well-height (well)
-  (cadr (well-size well)))
+  (cdr (well-size well)))
 
 (defun well-absolute-size (well)
-  (mapcar (lambda (a b) (* a b)) (well-size well) *piece-dimensions*))
+  (cons (* (well-width well)  (car *piece-dimensions*))
+        (* (well-height well) (cdr *piece-dimensions*))))
 
 (defun piece-well-x (parent-tetromino piece)
   (with-slots ((parent-x x)) parent-tetromino
@@ -271,7 +305,8 @@
       (+ parent-y piece-y))))
 
 (defun well->absolute-coordinates (x y)
-  (cons (* x (first *piece-dimensions*)) (* y (second *piece-dimensions*))))
+  (cons (+ (car (well-window-pos)) (* x (car *piece-dimensions*)))
+        (+ (cdr (well-window-pos)) (* y (cdr *piece-dimensions*)))))
 
 (defun piece-well-position (parent-tetromino piece)
   (cons (piece-well-x parent-tetromino piece)
@@ -281,7 +316,8 @@
   (let ((new-well (make-instance 'well)))
     (with-slots ((new-pieces pieces)) new-well
       (with-slots ((old-pieces pieces)) old-well
-        (destructuring-bind (w h) (well-size old-well)
+        (let ((w (well-width  old-well))
+              (h (well-height old-well)))
           (dotimes (y h)
             (dotimes (x w)
               (setf (aref new-pieces (+ x (* y w)))
@@ -332,7 +368,7 @@
 ;;; piece stuff
 
 (defclass piece ()
-  ((x     :initarg :x     :initform 0)nn
+  ((x     :initarg :x     :initform 0)
    (y     :initarg :y     :initform 0)
    (color :initarg :color :initform sdl:*white*))
   (:documentation "Primitive part of tetromino or well contents"))
@@ -454,7 +490,8 @@
   "Returns true if tetromino don't overlapps well's borders"
   (multiple-value-bind (l-border t-border r-border b-border) 
       (tetromino-borders tetromino)
-    (destructuring-bind (well-width well-height) (well-size well)
+    (let ((well-width  (well-width well))
+          (well-height (well-height well)))
       (and
        (>= l-border 0)
        (>= t-border 0)
@@ -462,7 +499,8 @@
        (<  b-border well-height)))))
 
 (defun point-inside-of-well-p (well x y)
-  (destructuring-bind (well-width well-height) (well-size well)
+  (let ((well-width  (well-width well))
+        (well-height (well-height well)))
     (and (>= x 0) (< x well-width) (>= y 0) (< y well-height))))
 
 (defun tetromino-overlaps-well-pieces-p (well tetromino)
