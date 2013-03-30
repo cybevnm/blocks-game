@@ -159,7 +159,11 @@
                :color color))))
 
 (defun draw-filled-piece (piece &optional (well-x 0) (well-y 0))
-  (draw-piece #'sdl:draw-box-* piece well-x well-y))
+  (draw-piece (lambda (x y w h &key color) 
+                (sdl:draw-box-* x y (1- w) (1- h) :color color))
+              piece 
+              well-x
+              well-y))
 
 (defun draw-projected-piece (piece &optional (well-x 0) (well-y 0))
   (draw-piece #'sdl:draw-rectangle-* piece well-x well-y))
@@ -183,8 +187,8 @@
 (defun draw-well-border (well well-window-pos)
   (sdl:draw-rectangle-* (1- (car well-window-pos))
                         (1- (cdr well-window-pos))
-                        (+ (car (well-absolute-size well)) 3)
-                        (+ (cdr (well-absolute-size well)) 3)))
+                        (+ (car (well-absolute-size well)) 2)
+                        (+ (cdr (well-absolute-size well)) 2)))
 
 (defun draw-well-pieces (well well-window-pos)
   (with-slots (pieces) well
@@ -203,19 +207,19 @@
     (dotimes (x v-lines-num)
       (sdl:draw-vline (+ (car well-pos) (* (car *piece-dimensions*) (1+ x)))
                       (cdr well-pos)
-                      (+ (cdr well-pos) (cdr (well-absolute-size well)))
+                      (1- (+ (cdr well-pos) (cdr (well-absolute-size well))))
                       :color *well-grid-color*))
     ;; horizontal lines
     (dotimes (y h-lines-num)
       (sdl:draw-hline (car well-pos)
-                      (+ (car well-pos) (car (well-absolute-size well)))
+                      (1- (+ (car well-pos) (car (well-absolute-size well))))
                       (+ (cdr well-pos) (* (cdr *piece-dimensions*) (1+ y)))
                       :color *well-grid-color*))))
 
 (defun draw-well (well)
-  (draw-well-border well (well-window-pos))
   (draw-well-pieces well (well-window-pos))
-  (draw-well-grid   well))
+  (draw-well-grid   well)
+  (draw-well-border well (well-window-pos)))
 
 (defun dump-well-to-stdout (well)
   (with-slots (pieces) well
