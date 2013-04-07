@@ -20,8 +20,6 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; constants
 
-
-
 (defparameter *well-dimensions*  '(10 . 22))
 (defparameter *piece-dimensions* '(15 . 15))
 (defparameter *background-color*  sdl:*black*)
@@ -38,6 +36,14 @@
 (defun curry (function &rest args)
     (lambda (&rest more-args)
       (apply function (append args more-args))))
+
+
+(defun random-element (list)
+  "Return some element of the list, chosen at random."
+  (nth (random (length list)) list))
+
+(defun in-range-p (value left right)
+  (and (>= value left) (< value right)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; layout
@@ -95,7 +101,7 @@
    (tetrises-num      :initform 0)))
 
 (defmethod initialize-instance :after ((game blocks-game) &key)
-  (replace-curr-tetromino game (make-tetromino-of-type 'L 5 0 sdl:*green*)))
+  (replace-curr-tetromino game (make-tetromino-of-type 'L 5 0)))
 
 (defun replace-curr-tetromino (game tetromino)
   (setf (slot-value game 'curr-tetromino) tetromino))
@@ -108,7 +114,7 @@
                            (4 'tetrises-num)))))
 
 (defun spawn-next-tetromino ()
-  (make-tetromino-of-type 'L 5 0 sdl:*green*))
+  (make-tetromino-of-type (random-element '(I J L O S T Z)) 5 -2))
 
 (defun replace-well (game well)
   (setf (slot-value game 'well) well))
@@ -150,13 +156,15 @@
 
 (defun draw-piece (drawing-func piece &optional (well-x 0) (well-y 0))
   (with-slots (x y color) piece
-    (let ((well-xy (well->absolute-coordinates well-x well-y)))
-      (funcall drawing-func 
-               (floor (+ (car well-xy) (* x (car *piece-dimensions*))))
-               (floor (+ (cdr well-xy) (* y (cdr *piece-dimensions*))))
-               (car *piece-dimensions*)
-               (cdr *piece-dimensions*)
-               :color color))))
+    (when (and (in-range-p (+ well-x x) 0 (car *well-dimensions*))
+               (in-range-p (+ well-y y) 0 (cdr *well-dimensions*)))
+      (let ((well-xy (well->absolute-coordinates well-x well-y)))
+        (funcall drawing-func 
+                 (floor (+ (car well-xy) (* x (car *piece-dimensions*))))
+                 (floor (+ (cdr well-xy) (* y (cdr *piece-dimensions*))))
+                 (car *piece-dimensions*)
+                 (cdr *piece-dimensions*)
+               :color color)))))
 
 (defun draw-filled-piece (piece &optional (well-x 0) (well-y 0))
   (draw-piece (lambda (x y w h &key color) 
@@ -442,47 +450,52 @@
                  :pieces pieces
                  :falling-counter falling-counter))
 
+(defparameter *orange* (sdl:color :r 255 :g 127 :b 0))
+(defparameter *purple* (sdl:color :r 128 :g 0   :b 128))
+
 (defun pieces-coords (type)
   (ecase type
-    (I '((1.5 1.5) (0 1) (1 1) (2 1) (3 1)))
-                                        ;(J '((1.5 1.5) (0 0) (1 0) (2 0) (2 1)))
-    (L '((1 1) (2 0) (0 1) (1 1) (2 1)))
-                                        ;(O '((1 1)     (0 0) (1 0) (0 1) (1 1)))
-                                        ;(S '((1.5 1.5) (1 0) (2 0) (0 1) (1 1)))
-                                        ;(T '((1.5 1.5) (0 0) (1 0) (2 0) (0 1)))
-                                        ;(Z '((1.5 1.5) (0 0) (1 0) (1 1) (2 1)))
-    ))
+    (I `(,sdl:*cyan*   (1.5 1.5) (0 1) (1 1) (2 1) (3 1)))
+    (J `(,sdl:*blue*   (1.5 1.5) (0 0) (1 0) (2 0) (2 1)))
+    (L `(,*orange*     (1 1)     (2 0) (0 1) (1 1) (2 1)))
+    (O `(,sdl:*yellow* (1 1)     (0 0) (1 0) (0 1) (1 1)))
+    (S `(,sdl:*green*  (1.5 1.5) (1 0) (2 0) (0 1) (1 1)))
+    (T `(,*purple*     (1.5 1.5) (0 0) (1 0) (2 0) (0 1)))
+    (Z `(,sdl:*red*    (1.5 1.5) (0 0) (1 0) (1 1) (2 1)))))
 
-(defun center-from-coords (coords)
+(defun color-from-coords (coords)
   (first coords))
 
-(defun pieces-from-coords (coords color)
-  (loop for xy in (rest coords) 
-     collect (make-piece (first xy) (second xy) color)))
+(defun center-from-coords (coords)
+  (second coords))
 
-(defun make-tetromino-of-type (type x y color)
+(defun pieces-from-coords (coords)
+  (loop for xy in (cddr coords) 
+     collect (make-piece (first xy) (second xy) (color-from-coords coords))))
+
+(defun make-tetromino-of-type (type x y)
   (let ((coords (pieces-coords type)))
     (make-tetromino
      x
      y
      (center-from-coords coords)
-     (pieces-from-coords coords color))))
+     (pieces-from-coords coords))))
 
 (defun reduce-tetromino-pieces (tetromino func key-func)
   (with-slots (pieces) tetromino
     (reduce func pieces :key key-func)))
 
 (defun tetromino-left-border (tetromino)
-  (reduce-tetromino-pieces tetromino 'min (curry 'piece-well-x tetromino)))
+  (reduce-tetromino-pieces tetromino #'min (curry 'piece-well-x tetromino)))
 
 (defun tetromino-top-border (tetromino)
-  (reduce-tetromino-pieces tetromino 'min (curry 'piece-well-y tetromino)))
+  (reduce-tetromino-pieces tetromino #'min (curry 'piece-well-y tetromino)))
 
 (defun tetromino-right-border (tetromino)
-  (reduce-tetromino-pieces tetromino 'max (curry 'piece-well-x tetromino)))
+  (reduce-tetromino-pieces tetromino #'max (curry 'piece-well-x tetromino)))
 
 (defun tetromino-bottom-border (tetromino)
-  (reduce-tetromino-pieces tetromino 'max (curry 'piece-well-y tetromino)))
+  (reduce-tetromino-pieces tetromino #'max (curry 'piece-well-y tetromino)))
 
 (defun tetromino-borders (tetromino)
   (values (tetromino-left-border   tetromino)
@@ -498,7 +511,6 @@
           (well-height (well-height well)))
       (and
        (>= l-border 0)
-       (>= t-border 0)
        (<  r-border well-width)
        (<  b-border well-height)))))
 
