@@ -91,7 +91,7 @@
                (update-game)
                (draw-game)
                (sdl:update-display))))))
- 
+
 (defclass blocks-game ()
   ((well              :initform (make-instance 'well))
    (curr-tetromino    :initform nil)
@@ -127,32 +127,44 @@
     (when connection
       (swank::handle-requests connection t))))
 
+(defun handle-common-tick (well tetromino)
+  (let ((clearing-result (clear-lines well)))
+    (replace-well *game* (cdr clearing-result))
+    (replace-curr-tetromino *game* tetromino)
+    (when (> (car clearing-result) 0)
+      (add-clear *game* (car clearing-result)))))
+  
+
 (defun update-game ()
   ;; REPL handling
   (handle-slime-requests)
   ;; falling current tetromino
   (with-slots (curr-tetromino well) *game*
-    (let* ((well-and-tetromino (update-tetromino curr-tetromino well))
-           (moved-tetromino    (cdr well-and-tetromino))
-           (clearing-result    (clear-lines (car well-and-tetromino))))
-      (replace-well *game* (cdr clearing-result))
-      (replace-curr-tetromino *game* moved-tetromino)
-      (when (> (car clearing-result) 0) 
-        (add-clear *game* (car clearing-result))))))
+    (multiple-value-bind (result updated-well updated-tetromino) 
+        (update-tetromino curr-tetromino well)
+      (case result
+        (:well-overflowed)
+        (otherwise (handle-common-tick updated-well updated-tetromino))))))
 
 (defparameter *falling-counter-threshold* 15)
-
+  
 (defun update-tetromino (tetromino well)
   (with-slots (x y center pieces falling-counter) tetromino
     (let ((new-falling-counter (1+ falling-counter)))
      (if (>= new-falling-counter *falling-counter-threshold*)
           (let ((moving-result (move-tetromino-down well tetromino)))
-            (if (eq (car moving-result) :was-moved)
-                (cons well (cdr moving-result))
-                (cons (integrate-tetromino-to-well tetromino well)
-                      (spawn-next-tetromino))))
-           (cons well 
-                 (make-tetromino x y center pieces (1+ falling-counter)))))))
+            (ecase (car moving-result)
+              (:was-moved   (values :tetromino-moved well (cdr moving-result)))
+              (:was-blocked (if (tetromino-overflowed-well-p (cdr moving-result))
+                                (values :well-overflowed 
+                                        well 
+                                        (cdr moving-result))
+                                (values :new-tetromino-spawned
+                                        (integrate-tetromino-to-well tetromino well) 
+                                        (spawn-next-tetromino))))))
+          (values :nothing-happened
+                  well 
+                  (make-tetromino x y center pieces (1+ falling-counter)))))))
 
 (defun draw-piece (drawing-func piece &optional (well-x 0) (well-y 0))
   (with-slots (x y color) piece
@@ -532,6 +544,9 @@
                                                   (* (cdr tetromino-piece-pos)
                                                      (well-width well))))))
               (return t))))))))
+
+(defun tetromino-overflowed-well-p (tetromino)
+  (< (tetromino-top-border tetromino) 0))
 
 (defun tetromino-in-allowed-position-p (well tetromino)
   (and (tetromino-inside-of-well-p well tetromino)
