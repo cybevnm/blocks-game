@@ -521,10 +521,7 @@
       (tetromino-borders tetromino)
     (let ((well-width  (well-width well))
           (well-height (well-height well)))
-      (and
-       (>= l-border 0)
-       (<  r-border well-width)
-       (<  b-border well-height)))))
+      (and (>= l-border 0) (<  r-border well-width) (<  b-border well-height)))))
 
 (defun point-inside-of-well-p (well x y)
   (let ((well-width  (well-width well))
