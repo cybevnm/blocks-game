@@ -33,10 +33,28 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; common stuff
 
+;;; actually should be called "partial" 
 (defun curry (function &rest args)
-    (lambda (&rest more-args)
-      (apply function (append args more-args))))
+  (lambda (&rest more-args)
+    (apply function (append args more-args))))
 
+;;; From http://www.cliki.net/COMPOSE
+(defun compose (&rest functions)
+  "Compose FUNCTIONS right-associatively, returning a function"
+  (lambda (x)
+    (reduce #'funcall functions
+            :initial-value x
+            :from-end t)))
+
+(defun mapcar-until (mapping-func list test-func)
+  "Returns part of the LIST mapped with MAPPING-FUNC until mapping result 
+satisfies test-func"
+  (if (null list)
+      nil
+      (let ((mapped-item (funcall mapping-func (car list))))
+        (if (funcall test-func mapped-item)
+            (cons mapped-item (mapcar-until mapping-func (cdr list) test-func))
+            nil))))
 
 (defun random-element (list)
   "Return some element of the list, chosen at random."
@@ -127,45 +145,71 @@
     (when connection
       (swank::handle-requests connection t))))
 
-(defun handle-common-tick (well tetromino)
+(defun handle-input (key)
+  (with-slots (curr-tetromino well) *game*
+    (multiple-value-bind (moving-type moving-remarks moved-tetromino)
+        (handle-tetromino-keys key curr-tetromino well)
+      (if (not (null moved-tetromino))
+          (handle-moved-tetromino moving-type moving-remarks moved-tetromino well)
+          (handle-common-keys key)))))
+
+(defun handle-tetromino-keys (key tetromino well)
+  (flet ((prepare-values (moving-type moving-result)
+           "Temporary solution to prepare and return values from parent function"
+           (values moving-type (car moving-result) (cdr moving-result))))
+    (case key
+      (:sdl-key-e     (prepare-values :rotating   (rotate-tetromino-cw  well tetromino)))
+      (:sdl-key-w     (prepare-values :rotating   (rotate-tetromino-ccw well tetromino)))
+      (:sdl-key-left  (prepare-values :horizontal (move-tetromino-left  well tetromino)))
+      (:sdl-key-right (prepare-values :horizontal (move-tetromino-right well tetromino)))
+      (:sdl-key-down  (prepare-values :vertical   (move-tetromino-down  well tetromino)))
+      (:sdl-key-space (values :vertical :was-blocked (drop-tetromino well tetromino)))
+      (otherwise nil))))
+
+(defun handle-common-keys (key)
+  (with-slots (well curr-tetromino) *game*
+    (case key
+      (:sdl-ley-q (sdl:push-quit-event)) ; don't work. why ?
+      (:sdl-key-d (dump-well-to-stdout well))
+      (:sdl-key-c (clear-well)))))
+
+(defun update-game ()
+  ;; REPL handling
+  (handle-slime-requests)
+  (with-slots (curr-tetromino well) *game*
+    (let ((moving-result (fall-tetromino curr-tetromino well)))
+      (handle-moved-tetromino :vertical (car moving-result) (cdr moving-result) well))))
+
+(defparameter *falling-counter-threshold* 50)
+
+(defun first-or-null (lst)
+  (and lst (first lst)))
+
+(defun fall-tetromino (tetromino well)
+  (with-slots (x y center pieces falling-counter) tetromino
+    (let ((new-falling-counter (1+ falling-counter)))
+      (if (>= new-falling-counter *falling-counter-threshold*)
+          (move-tetromino-down well tetromino)
+          (cons :nothing-happened 
+                (make-tetromino x y center pieces (1+ falling-counter)))))))
+
+(defun update-game-objects (well tetromino)
   (let ((clearing-result (clear-lines well)))
     (replace-well *game* (cdr clearing-result))
     (replace-curr-tetromino *game* tetromino)
     (when (> (car clearing-result) 0)
       (add-clear *game* (car clearing-result)))))
+
+(defun handle-moved-tetromino (moving-type moving-remarks moved-tetromino well)
+  (ecase moving-remarks
+    (:was-moved   (update-game-objects well moved-tetromino))
+    (:was-blocked (when (eq moving-type :vertical) 
+                    (if (tetromino-overflowed-well-p moved-tetromino)
+                        (print "GAME OVER")
+                        (update-game-objects (integrate-tetromino-to-well moved-tetromino well)
+                                             (spawn-next-tetromino)))))
+    (:nothing-happened (update-game-objects well moved-tetromino))))
   
-
-(defun update-game ()
-  ;; REPL handling
-  (handle-slime-requests)
-  ;; falling current tetromino
-  (with-slots (curr-tetromino well) *game*
-    (multiple-value-bind (result updated-well updated-tetromino) 
-        (update-tetromino curr-tetromino well)
-      (case result
-        (:well-overflowed)
-        (otherwise (handle-common-tick updated-well updated-tetromino))))))
-
-(defparameter *falling-counter-threshold* 15)
-  
-(defun update-tetromino (tetromino well)
-  (with-slots (x y center pieces falling-counter) tetromino
-    (let ((new-falling-counter (1+ falling-counter)))
-     (if (>= new-falling-counter *falling-counter-threshold*)
-          (let ((moving-result (move-tetromino-down well tetromino)))
-            (ecase (car moving-result)
-              (:was-moved   (values :tetromino-moved well (cdr moving-result)))
-              (:was-blocked (if (tetromino-overflowed-well-p (cdr moving-result))
-                                (values :well-overflowed 
-                                        well 
-                                        (cdr moving-result))
-                                (values :new-tetromino-spawned
-                                        (integrate-tetromino-to-well tetromino well) 
-                                        (spawn-next-tetromino))))))
-          (values :nothing-happened
-                  well 
-                  (make-tetromino x y center pieces (1+ falling-counter)))))))
-
 (defun draw-piece (drawing-func piece &optional (well-x 0) (well-y 0))
   (with-slots (x y color) piece
     (when (and (in-range-p (+ well-x x) 0 (car *well-dimensions*))
@@ -255,44 +299,6 @@
 
 (defun clear-well ()
   (replace-well *game* (make-instance 'well)))
-
-(defun handle-input (key)
-  (with-slots (well curr-tetromino) *game*
-    (case key
-      (:sdl-ley-q (sdl:push-quit-event)) ; don't work. why ?
-      (:sdl-key-d (dump-well-to-stdout well))
-      (:sdl-key-c (clear-well))
-      (otherwise (handle-tetromino-movement-key key)))))
-
-(defun handle-tetromino-movement-down (well curr-tetromino)
-  (let ((moving-result (move-tetromino-down well curr-tetromino)))
-    (if (eq (car moving-result) :was-moved)
-        (cons well (cdr moving-result))
-        (cons (integrate-tetromino-to-well curr-tetromino well)
-              (spawn-next-tetromino)))))
-
-(defun handle-tetromino-dropping (well curr-tetromino)
-  (let* ((dropped-tetromino (drop-tetromino well curr-tetromino))
-         (new-well (integrate-tetromino-to-well dropped-tetromino well)))
-    (cons new-well (spawn-next-tetromino))))
-
-(defun handle-tetromino-movement-key (key)
-  (with-slots (well curr-tetromino) *game*
-    (let ((movement-result
-           (case key
-             (:sdl-key-e     (cons well (rotate-tetromino-cw       well curr-tetromino)))
-             (:sdl-key-w     (cons well (rotate-tetromino-ccw      well curr-tetromino)))
-             (:sdl-key-left  (cons well (cdr (move-tetromino-left  well curr-tetromino))))
-             (:sdl-key-right (cons well (cdr (move-tetromino-right well curr-tetromino))))
-             (:sdl-key-down  (handle-tetromino-movement-down       well curr-tetromino))
-             (:sdl-key-space (handle-tetromino-dropping            well curr-tetromino))
-             (otherwise (cons nil nil)))))
-      (let ((new-well      (car movement-result))
-            (new-tetromino (cdr movement-result)))
-        (when (not (null new-well))
-          (replace-well *game* new-well))
-        (when (not (null new-tetromino))
-          (replace-curr-tetromino *game* new-tetromino))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; well stuff
@@ -560,7 +566,7 @@
                             pieces
                             (if reset-falling-counter
                                 0
-                                falling-counter)))))
+nn                                falling-counter)))))
     (if (tetromino-in-allowed-position-p well moved-tetromino)
         (cons :was-moved moved-tetromino)
         (cons :was-blocked tetromino))))
@@ -594,8 +600,8 @@
                                (rotate-pieces-cw  center pieces))
                            falling-counter))))
     (if (tetromino-in-allowed-position-p well rotated-tetromino)
-        rotated-tetromino
-        tetromino)))
+        (cons :was-moved   rotated-tetromino)
+        (cons :was-blocked tetromino))))
 
 (defun rotate-tetromino-ccw (well tetromino)
   (rotate-tetromino well tetromino -1))
