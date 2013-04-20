@@ -95,23 +95,23 @@ satisfies test-func"
           (window-size (calc-window-size)))
       (sdl:window (car window-size) 
                   (cdr window-size)
-                  :fps (make-instance 'sdl:fps-fixed
-                                      :target-frame-rate 30))
+                  :fps (make-instance 'sdl:fps-fixed :target-frame-rate 30))
       (sdl:enable-key-repeat 100 50)
                                         ;(setf (sdl:frame-rate) 30)
       (sdl:initialise-default-font sdl:*font-5x7*)
       (sdl:with-events (:poll)
         (:quit-event () t)
         (:video-expose-event () (sdl:update-display))
-        (:key-down-event (:key key) (handle-input key))
+        (:key-down-event (:key key) (handle-input *game* key))
         (:idle ()
                (sdl:clear-display *background-color*)
-               (update-game)
-               (draw-game)
+               (update-game *game*)
+               (draw-game *game*)
                (sdl:update-display))))))
 
 (defclass blocks-game ()
-  ((well              :initform (make-instance 'well))
+  ((state             :initform (make-instance 'playing-state))
+   (well              :initform (make-instance 'well))
    (curr-tetromino    :initform nil)
    (single-clears-num :initform 0)
    (double-clears-num :initform 0)
@@ -131,6 +131,56 @@ satisfies test-func"
                            (3 'triple-clears-num)
                            (4 'tetrises-num)))))
 
+(defmethod handle-input ((game blocks-game) key)
+  (handle-input (slot-value game 'state) key))
+
+(defmethod update-game ((game blocks-game))
+  (update-game (slot-value game 'state)))
+
+(defmethod draw-game ((game blocks-game))
+  (draw-game (slot-value game 'state)))
+
+(defclass game-state () ())
+
+(defgeneric handle-input (state key))
+(defmethod handle-input (state key))
+
+(defgeneric update-game (state))
+(defmethod update-game (state))
+(defmethod update-game :before (state)
+  (handle-slime-requests))
+           
+(defgeneric draw-game (state))
+(defmethod draw-game (state))
+
+(defclass intro-state (game-state) ())
+
+(defmethod handle-input ((state intro-state) key)
+  (setf (slot-value *game* 'state) (make-instance 'playing-state)))
+
+(defclass playing-state (game-state) ())
+
+(defmethod handle-input ((state playing-state) key)
+  (with-slots (curr-tetromino well) *game*
+    (multiple-value-bind (moving-type moving-remarks moved-tetromino)
+        (handle-tetromino-keys key curr-tetromino well)
+      (if (not (null moved-tetromino))
+          (handle-moved-tetromino moving-type moving-remarks moved-tetromino well)
+          (handle-common-keys key)))))
+
+(defmethod update-game ((state playing-state))
+  (with-slots (curr-tetromino well) *game*
+    (let ((moving-result (fall-tetromino curr-tetromino well)))
+      (handle-moved-tetromino :vertical (car moving-result) (cdr moving-result) well))))
+
+(defmethod draw-game ((state playing-state))
+  (with-slots (well curr-tetromino) *game*
+    (draw-well well)
+    (draw-filled-tetromino curr-tetromino)
+    (draw-projected-tetromino (drop-tetromino well curr-tetromino))))
+
+(defclass end-state (game-state) ())
+
 (defun spawn-next-tetromino ()
   (make-tetromino-of-type (random-element '(I J L O S T Z)) 5 -2))
 
@@ -144,14 +194,6 @@ satisfies test-func"
                                         ;  (swank::handle-requests connection t))))
     (when connection
       (swank::handle-requests connection t))))
-
-(defun handle-input (key)
-  (with-slots (curr-tetromino well) *game*
-    (multiple-value-bind (moving-type moving-remarks moved-tetromino)
-        (handle-tetromino-keys key curr-tetromino well)
-      (if (not (null moved-tetromino))
-          (handle-moved-tetromino moving-type moving-remarks moved-tetromino well)
-          (handle-common-keys key)))))
 
 (defun handle-tetromino-keys (key tetromino well)
   (flet ((prepare-values (moving-type moving-result)
@@ -172,13 +214,6 @@ satisfies test-func"
       (:sdl-ley-q (sdl:push-quit-event)) ; don't work. why ?
       (:sdl-key-d (dump-well-to-stdout well))
       (:sdl-key-c (clear-well)))))
-
-(defun update-game ()
-  ;; REPL handling
-  (handle-slime-requests)
-  (with-slots (curr-tetromino well) *game*
-    (let ((moving-result (fall-tetromino curr-tetromino well)))
-      (handle-moved-tetromino :vertical (car moving-result) (cdr moving-result) well))))
 
 (defparameter *falling-counter-threshold* 50)
 
@@ -241,12 +276,6 @@ satisfies test-func"
 
 (defun draw-projected-tetromino (tetromino)
   (draw-tetromino #'draw-projected-piece tetromino))
-
-(defun draw-game ()
-  (with-slots (well curr-tetromino) *game*
-    (draw-well well)
-    (draw-filled-tetromino curr-tetromino)
-    (draw-projected-tetromino (drop-tetromino well curr-tetromino))))
 
 (defun draw-well-border (well well-window-pos)
   (sdl:draw-rectangle-* (1- (car well-window-pos))
@@ -566,7 +595,7 @@ satisfies test-func"
                             pieces
                             (if reset-falling-counter
                                 0
-nn                                falling-counter)))))
+                                falling-counter)))))
     (if (tetromino-in-allowed-position-p well moved-tetromino)
         (cons :was-moved moved-tetromino)
         (cons :was-blocked tetromino))))
