@@ -101,7 +101,8 @@ satisfies test-func"
 (defun blocks-main ()
   (sdl:with-init ()
     (let ((*game* (make-instance 'blocks-game))
-          (window-size (calc-window-size)))
+          (window-size (calc-window-size))
+          (frame-index 0))      
       (sdl:window (car window-size) 
                   (cdr window-size)
                   :fps (make-instance 'sdl:fps-fixed :target-frame-rate 30))
@@ -113,9 +114,10 @@ satisfies test-func"
         (:video-expose-event () (sdl:update-display))
         (:key-down-event (:key key) (handle-input *game* key))
         (:idle ()
+               (incf frame-index)
                (sdl:clear-display *background-color*)
-               (update-game *game*)
-               (draw-game *game*)
+               (update-game *game* frame-index)
+               (draw-game *game* frame-index)
                (sdl:update-display))))))
 
 (defclass blocks-game ()
@@ -143,24 +145,24 @@ satisfies test-func"
 (defmethod handle-input ((game blocks-game) key)
   (handle-input (slot-value game 'state) key))
 
-(defmethod update-game ((game blocks-game))
-  (update-game (slot-value game 'state)))
+(defmethod update-game ((game blocks-game) frame-index)
+  (update-game (slot-value game 'state) frame-index))
 
-(defmethod draw-game ((game blocks-game))
-  (draw-game (slot-value game 'state)))
+(defmethod draw-game ((game blocks-game) frame-index)
+  (draw-game (slot-value game 'state) frame-index))
 
 (defclass game-state () ())
 
 (defgeneric handle-input (state key))
 (defmethod handle-input (state key))
 
-(defgeneric update-game (state))
-(defmethod update-game (state))
-(defmethod update-game :before (state)
+(defgeneric update-game (state frame-index))
+(defmethod update-game (state frame-index))
+(defmethod update-game :before (state frame-index)
   (handle-slime-requests))
            
-(defgeneric draw-game (state))
-(defmethod draw-game (state))
+(defgeneric draw-game (state frame-index))
+(defmethod draw-game (state frame-index))
 
 (defclass intro-state (game-state) ())
 
@@ -172,8 +174,8 @@ satisfies test-func"
   (make-pathname :directory (pathname-directory #.(or *compile-file-truename*
                                                       *load-truename*))))
 
-(defun make-big-font ()
-  (let ((char-width 32) (char-height 40) (chars-num 48))
+(defun make-font (file-name char-width char-height)
+  (let ((chars-num 48))
     (sdl:initialise-font 
      (make-instance 'sdl:simple-font-definition
                     :width char-width :height char-height
@@ -185,7 +187,16 @@ satisfies test-func"
                                                                char-width 
                                                                char-height)))
                     :color-key (sdl:color :r 99 :g 0 :b 0)
-                    :filename (sdl:create-path "big-font.bmp" *application-root-path*)))))
+                    :filename (sdl:create-path file-name *application-root-path*)))))
+  
+(defun make-biggest-font ()
+  (make-font "biggest-font.bmp" 32 40))
+
+(defun make-big-font ()
+  (make-font "big-font.bmp" 24 30))
+
+(defun make-medium-font ()
+  (make-font "medium-font.bmp" 16 20))
 
 (defun string-width (str font)
   (* (length str) (sdl:char-width font)))
@@ -194,7 +205,7 @@ satisfies test-func"
   (/ (- (car (calc-window-size)) (string-width str font)) 2))
   
 (defun draw-big-title ()
-  (let* ((big-font (make-big-font))
+  (let* ((big-font (make-biggest-font))
          (title-text "BLOCKS")
          (title-colors `(,sdl:*red*   ,*orange*   ,sdl:*yellow* 
                          ,sdl:*green* ,sdl:*blue* ,*purple*))
@@ -205,13 +216,13 @@ satisfies test-func"
        for index from 0 
        do (sdl:draw-string-solid-* (string char)
                                    (+ (* index (sdl:char-width big-font)) title-left)
-                                   40
+                                   30
                                    :font big-font
                                    :color color))))
 
 (defun draw-press-space-to-start ()
-  (let* ((font (sdl:initialise-font sdl:*font-10x20*))
-         (text "press space to continue")
+  (let* ((font (make-medium-font))
+         (text "PRESS SPACE")
          (left (calc-string-left-border text font)))
     (sdl:draw-string-solid-* text
                              left
@@ -220,19 +231,22 @@ satisfies test-func"
                              :color *orange*)))
 
 (defun draw-author ()
-  (let* ((font (sdl:initialise-font sdl:*font-8x13*))
-         (text "by cybevnm")
+  (let* ((font (make-medium-font))
+         (text "BY CYBEVNM")
          (left (calc-string-left-border text font)))
-    (when (not font) (error "SHIIIT"))
     (sdl:draw-string-solid-* text 
                              left
-                             (- (cdr (calc-window-size)) 20)
+                             (- (cdr (calc-window-size)) 40)
                              :font font
                              :color *purple*)))
 
-(defmethod draw-game ((state intro-state))
+(defun square-func (x period)
+  "Returns -1 or 0 depending on x"
+  (signum (- (mod (- x (/ period 2)) period) (/ period 2))))
+
+(defmethod draw-game ((state intro-state) frame-index)
   (draw-big-title)
-  (draw-press-space-to-start)
+    (when (> (square-func frame-index 30) 0) (draw-press-space-to-start))
   (draw-author))
 
 (defclass playing-state (game-state) ())
@@ -245,16 +259,20 @@ satisfies test-func"
           (handle-moved-tetromino moving-type moving-remarks moved-tetromino well)
           (handle-common-keys key)))))
 
-(defmethod update-game ((state playing-state))
+(defmethod update-game ((state playing-state) frame-index)
   (with-slots (curr-tetromino well) *game*
     (let ((moving-result (fall-tetromino curr-tetromino well)))
       (handle-moved-tetromino :vertical (car moving-result) (cdr moving-result) well))))
 
-(defmethod draw-game ((state playing-state))
+(defun draw-next-tetromino (next-tetromino)
+    (sdl:draw-string-solid-* "NEXT" 10 10 :font (make-big-font) :color sdl:*red*))
+    
+(defmethod draw-game ((state playing-state) frame-index)
   (with-slots (well curr-tetromino) *game*
     (draw-well well)
     (draw-filled-tetromino curr-tetromino)
-    (draw-projected-tetromino (drop-tetromino well curr-tetromino))))
+    (draw-projected-tetromino (drop-tetromino well curr-tetromino))
+    (draw-next-tetromino nil)))
 
 (defclass end-state (game-state) ())
 
