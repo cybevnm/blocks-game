@@ -29,6 +29,8 @@
 (defparameter *margin* 20)
 (defparameter *stats-width* 50)
 
+(defparameter *orange* (sdl:color :r 255 :g 127 :b 0))
+(defparameter *purple* (sdl:color :r 128 :g 0   :b 128))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; common stuff
@@ -62,6 +64,13 @@ satisfies test-func"
 
 (defun in-range-p (value left right)
   (and (>= value left) (< value right)))
+
+(defmacro dolist-counting ((var index list) &rest body)
+  "Complete dolist analog but also maintains current item index"
+  `(let ((,index 0))
+     (dolist (,var ,list)       
+       ,@body
+       (incf ,index))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; layout
@@ -110,7 +119,7 @@ satisfies test-func"
                (sdl:update-display))))))
 
 (defclass blocks-game ()
-  ((state             :initform (make-instance 'playing-state))
+  ((state             :initform (make-instance 'intro-state))
    (well              :initform (make-instance 'well))
    (curr-tetromino    :initform nil)
    (single-clears-num :initform 0)
@@ -156,7 +165,75 @@ satisfies test-func"
 (defclass intro-state (game-state) ())
 
 (defmethod handle-input ((state intro-state) key)
-  (setf (slot-value *game* 'state) (make-instance 'playing-state)))
+  (when (eq key :sdl-key-space)
+    (setf (slot-value *game* 'state) (make-instance 'playing-state))))
+
+(defparameter *application-root-path*
+  (make-pathname :directory (pathname-directory #.(or *compile-file-truename*
+                                                      *load-truename*))))
+
+(defun make-big-font ()
+  (let ((char-width 32) (char-height 40) (chars-num 48))
+    (sdl:initialise-font 
+     (make-instance 'sdl:simple-font-definition
+                    :width char-width :height char-height
+                    :character-map "ABCDEFGHIJKLMNOPQRSTUVWXYZ:'!?_-,.()#~0123456789"
+                    :character-mask (loop for y from 0 below 1
+                                       append (loop for x from 0 below chars-num
+                                                 collect (list (* x char-width) 
+                                                               (* y char-height) 
+                                                               char-width 
+                                                               char-height)))
+                    :color-key (sdl:color :r 99 :g 0 :b 0)
+                    :filename (sdl:create-path "big-font.bmp" *application-root-path*)))))
+
+(defun string-width (str font)
+  (* (length str) (sdl:char-width font)))
+
+(defun calc-string-left-border (str font)
+  (/ (- (car (calc-window-size)) (string-width str font)) 2))
+  
+(defun draw-big-title ()
+  (let* ((big-font (make-big-font))
+         (title-text "BLOCKS")
+         (title-colors `(,sdl:*red*   ,*orange*   ,sdl:*yellow* 
+                         ,sdl:*green* ,sdl:*blue* ,*purple*))
+         (title-left (calc-string-left-border title-text big-font)))
+    (loop 
+       for char across title-text
+       for color in title-colors
+       for index from 0 
+       do (sdl:draw-string-solid-* (string char)
+                                   (+ (* index (sdl:char-width big-font)) title-left)
+                                   40
+                                   :font big-font
+                                   :color color))))
+
+(defun draw-press-space-to-start ()
+  (let* ((font (sdl:initialise-font sdl:*font-10x20*))
+         (text "press space to continue")
+         (left (calc-string-left-border text font)))
+    (sdl:draw-string-solid-* text
+                             left
+                             (/ (cdr (calc-window-size)) 2)
+                             :font font
+                             :color *orange*)))
+
+(defun draw-author ()
+  (let* ((font (sdl:initialise-font sdl:*font-8x13*))
+         (text "by cybevnm")
+         (left (calc-string-left-border text font)))
+    (when (not font) (error "SHIIIT"))
+    (sdl:draw-string-solid-* text 
+                             left
+                             (- (cdr (calc-window-size)) 20)
+                             :font font
+                             :color *purple*)))
+
+(defmethod draw-game ((state intro-state))
+  (draw-big-title)
+  (draw-press-space-to-start)
+  (draw-author))
 
 (defclass playing-state (game-state) ())
 
@@ -496,9 +573,6 @@ satisfies test-func"
                  :center center 
                  :pieces pieces
                  :falling-counter falling-counter))
-
-(defparameter *orange* (sdl:color :r 255 :g 127 :b 0))
-(defparameter *purple* (sdl:color :r 128 :g 0   :b 128))
 
 (defun pieces-coords (type)
   (ecase type
