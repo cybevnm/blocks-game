@@ -283,10 +283,10 @@ satisfies test-func"
   (setf (slot-value game 'well) well))
 
 (defun handle-slime-requests ()
-  (let ((connection
-         (or swank::*emacs-connection* (swank::default-connection))))
-                                        ;(when (and connection (not (eql swank:*communication-style* :spawn)))
-                                        ;  (swank::handle-requests connection t))))
+  (let ((connection (or swank::*emacs-connection* 
+                        (swank::default-connection))))
+    ;;(when (and connection (not (eql swank:*communication-style* :spawn)))
+    ;;  (swank::handle-requests connection t))))
     (when connection
       (swank::handle-requests connection t))))
 
