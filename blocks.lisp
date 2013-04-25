@@ -27,7 +27,7 @@
 (defparameter *curr-frame-index*  0)
 
 (defparameter *margin* 20)
-(defparameter *stats-width* 60)
+(defparameter *stats-width* 70)
 
 (defparameter *orange* (sdl:color :r 255 :g 127 :b 0))
 (defparameter *purple* (sdl:color :r 128 :g 0   :b 128))
@@ -71,6 +71,20 @@ satisfies test-func"
      (dolist (,var ,list)       
        ,@body
        (incf ,index))))
+
+(defun random-list-permutation (list)
+  "O(n^2) random list permutation implementation"
+  (when list
+    (let* ((list-len (length list))
+           (elmt-ind (random list-len)))
+      (cons (nth elmt-ind list)
+            (random-list-permutation (append (butlast list (- list-len elmt-ind))
+                                             (nthcdr (+ elmt-ind 1) list)))))))
+
+;; (defun nip-off-list (list)
+;;   (values (car tetrominos-stream) (cdr tetrominos-stream)))
+
+  
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; layout
@@ -124,16 +138,19 @@ satisfies test-func"
   ((state             :initform (make-instance 'intro-state))
    (well              :initform (make-instance 'well))
    (curr-tetromino    :initform nil)
+   (tetrominos-types-queue :initform (make-tetrominos-types-queue))
    (single-clears-num :initform 0)
    (double-clears-num :initform 0)
    (triple-clears-num :initform 0)
    (tetrises-num      :initform 0)))
 
-(defmethod initialize-instance :after ((game blocks-game) &key)
-  (replace-curr-tetromino game (make-tetromino-of-type 'L 5 0)))
-
 (defun replace-curr-tetromino (game tetromino)
   (setf (slot-value game 'curr-tetromino) tetromino))
+
+(defmethod initialize-instance :after ((game blocks-game) &key)
+  (let ((spawining-result (spawn-next-tetromino (make-tetrominos-types-queue))))
+    (replace-curr-tetromino game (car spawining-result))
+    (setf (slot-value game 'tetrominos-types-queue) (cdr spawining-result))))
 
 (defun add-clear (game lines-cleared)
   (incf (slot-value game (ecase lines-cleared
@@ -259,10 +276,32 @@ satisfies test-func"
           (handle-moved-tetromino moving-type moving-remarks moved-tetromino well)
           (handle-common-keys key)))))
 
+(defun calc-score (singles doubles triples tetrises)
+  (+ (* singles 10) (* doubles 20) (* triples 30) (* tetrises 80)))
+
+(defun calc-game-score ()
+  (with-slots (single-clears-num double-clears-num triple-clears-num tetrises-num)
+      *game*
+    (calc-score single-clears-num double-clears-num triple-clears-num tetrises-num)))
+
+(defparameter *levels-scores* '(0 250 500 1000 2000 4000 8000))
+
+(defun get-level-for-score (score)
+  (or (position score
+                *levels-scores* 
+                :test (lambda (game-score level-score) (> level-score game-score)))
+      (1- (length *levels-scores*))))
+  
+(defun get-game-level ()
+  (get-level-for-score (calc-game-score)))
+
 (defmethod update-game ((state playing-state) frame-index)
   (with-slots (curr-tetromino well) *game*
-    (let ((moving-result (fall-tetromino curr-tetromino well)))
-      (handle-moved-tetromino :vertical (car moving-result) (cdr moving-result) well))))
+    (let ((moving-result (fall-tetromino curr-tetromino well (get-game-level))))
+      (handle-moved-tetromino :vertical 
+                              (car moving-result) 
+                              (cdr moving-result) 
+                              well))))
 
 (defun draw-next-tetromino (next-tetromino)
   (sdl:draw-string-solid-* "NEXT" 
@@ -273,21 +312,71 @@ satisfies test-func"
   (draw-filled-tetromino (slot-value next-tetromino 'pieces) 
                          (slot-value next-tetromino 'color)
                          *margin*
-                         (+ *margin* (sdl:char-width (make-medium-font)) 10)))
-    
+                         (+ *margin* (sdl:char-width (make-medium-font)) *margin*)))
+
+(defun peek-next-tetromino ()
+  (make-tetromino-of-type (car (slot-value *game* 'tetrominos-types-queue)) 0 0))
+
+(defun next-tetromino-color ()
+  (slot-value (peek-next-tetromino) 'color))
+
+(defun draw-score ()
+  (let* ((font (make-medium-font))
+         (text-y (+ *margin*
+                    (sdl:get-font-height :font font)
+                    *margin*
+                    (* 4 (cdr *piece-dimensions*)))))
+    (sdl:draw-string-solid-* "SCORE"
+                             *margin*
+                             text-y
+                             :font font
+                             :color sdl:*red*)
+    (with-slots (single-clears-num double-clears-num triple-clears-num tetrises-num)
+        *game*
+      (sdl:draw-string-solid-* (write-to-string (calc-game-score))
+                               *margin*
+                               (+ text-y 
+                                  (sdl:get-font-height :font font) 
+                                  *margin*)
+                               :font font
+                               :color (next-tetromino-color)))))
+
+(defun draw-level ()
+  (let* ((font (make-medium-font))
+         (text-y (+ *margin*
+                    (sdl:get-font-height :font font)
+                    *margin*
+                    (* 4 (cdr *piece-dimensions*))
+                    *margin*
+                    (sdl:get-font-height :font font)
+                    *margin*
+                    (sdl:get-font-height :font font)
+                    *margin*)))
+    (sdl:draw-string-solid-* "LEVEL"
+                             *margin*
+                             text-y
+                             :font font
+                             :color sdl:*red*)
+    (sdl:draw-string-solid-* (write-to-string (get-game-level))
+                             *margin*
+                             (+ text-y
+                                (sdl:get-font-height :font font)                                
+                                *margin*)
+                             :font font
+                             :color (next-tetromino-color))))
+                                
 (defmethod draw-game ((state playing-state) frame-index)
-  (with-slots (well curr-tetromino) *game*
+  (with-slots (well curr-tetromino tetrominos-types-queue) *game*
     (draw-well well)
     (with-slots (pieces color x y) curr-tetromino
       (draw-filled-tetromino-at-well-pos pieces color x y))
     (with-slots (pieces color x y) (drop-tetromino well curr-tetromino)
       (draw-projected-tetromino-at-well-pos pieces color x y))
-    (draw-next-tetromino (spawn-next-tetromino))))
+    (draw-next-tetromino (peek-next-tetromino))
+    (draw-score)
+    (draw-level)))
 
 (defclass end-state (game-state) ())
-
-(defun spawn-next-tetromino ()
-  (make-tetromino-of-type (random-element '(I J L O S T Z)) 5 -2))
 
 (defun replace-well (game well)
   (setf (slot-value game 'well) well))
@@ -320,35 +409,56 @@ satisfies test-func"
       (:sdl-key-d (dump-well-to-stdout well))
       (:sdl-key-c (clear-well)))))
 
-(defparameter *falling-counter-threshold* 50)
+(defparameter *levels-falling-thresholds* '(50 40 30 20 10 5))
 
+(defun get-falling-threshold-for-level (level)
+  (let ((thresholds-list-len (length *levels-falling-thresholds*)))
+    (nth (if (> level thresholds-list-len) (1- thresholds-list-len) level)
+         *levels-falling-thresholds*)))
+  
 (defun first-or-null (lst)
   (and lst (first lst)))
 
-(defun fall-tetromino (tetromino well)
+(defun fall-tetromino (tetromino well level)
   (with-slots (x y center pieces color falling-counter) tetromino
     (let ((new-falling-counter (1+ falling-counter)))
-      (if (>= new-falling-counter *falling-counter-threshold*)
+      (if (>= new-falling-counter (get-falling-threshold-for-level level))
           (move-tetromino-down well tetromino)
           (cons :nothing-happened 
                 (make-tetromino x y center pieces color (1+ falling-counter)))))))
 
-(defun update-game-objects (well tetromino)
+(defun update-game-objects (well tetromino tetrominos-types-queue)
   (let ((clearing-result (clear-lines well)))
     (replace-well *game* (cdr clearing-result))
     (replace-curr-tetromino *game* tetromino)
     (when (> (car clearing-result) 0)
-      (add-clear *game* (car clearing-result)))))
+      (add-clear *game* (car clearing-result))))
+  (when tetrominos-types-queue
+    (setf (slot-value *game* 'tetrominos-types-queue) tetrominos-types-queue)))
+
+(defun make-tetrominos-types-queue ()
+  (random-list-permutation '(I J L O S T Z)))
+
+(defun spawn-next-tetromino (tetrominos-types-queue)
+  (let ((actual-tetrominos-types-queue
+         (if (= (length tetrominos-types-queue) 1)
+             (append tetrominos-types-queue (make-tetrominos-types-queue))
+             tetrominos-types-queue)))
+    (cons (make-tetromino-of-type (car actual-tetrominos-types-queue) 5 -2)
+          (cdr actual-tetrominos-types-queue))))
 
 (defun handle-moved-tetromino (moving-type moving-remarks moved-tetromino well)
   (ecase moving-remarks
-    (:was-moved   (update-game-objects well moved-tetromino))
+    (:was-moved   (update-game-objects well moved-tetromino nil))
     (:was-blocked (when (eq moving-type :vertical) 
                     (if (tetromino-overflowed-well-p moved-tetromino)
                         (print "GAME OVER")
-                        (update-game-objects (integrate-tetromino-to-well moved-tetromino well)
-                                             (spawn-next-tetromino)))))
-    (:nothing-happened (update-game-objects well moved-tetromino))))
+                        (let ((spawning-result
+                               (spawn-next-tetromino (slot-value *game* 'tetrominos-types-queue))))
+                          (update-game-objects (integrate-tetromino-to-well moved-tetromino well)
+                                               (car spawning-result)
+                                               (cdr spawning-result))))))
+    (:nothing-happened (update-game-objects well moved-tetromino nil))))
   
 (defun draw-piece (drawing-func color window-x window-y)
   (funcall drawing-func 
