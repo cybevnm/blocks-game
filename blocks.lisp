@@ -81,11 +81,6 @@ satisfies test-func"
             (random-list-permutation (append (butlast list (- list-len elmt-ind))
                                              (nthcdr (+ elmt-ind 1) list)))))))
 
-;; (defun nip-off-list (list)
-;;   (values (car tetrominos-stream) (cdr tetrominos-stream)))
-
-  
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; well stuff
 
