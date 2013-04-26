@@ -87,6 +87,291 @@ satisfies test-func"
   
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; well stuff
+
+(defclass well ()
+  ((pieces :initform (make-array (* (car *well-dimensions*) 
+                                    (cdr *well-dimensions*))
+                                 :initial-element nil)
+           :initarg :pieces))
+  (:documentation "Well is main game area where tetrominos falls to bottom"))
+
+(defun well-width ()
+  (car *well-dimensions*))
+
+(defun well-height ()
+  (cdr *well-dimensions*))
+
+(defun well-pixels-size ()
+  (cons (* (well-width)  (car *piece-dimensions*))
+        (* (well-height) (cdr *piece-dimensions*))))
+
+(defun piece-well-position (parent-tetromino piece)
+  (with-slots ((parent-x x) (parent-y y)) parent-tetromino
+    (with-slots ((piece-x x) (piece-y y)) piece
+      (cons (+ parent-x piece-x) (+ parent-y piece-y)))))
+
+(defun clone-well (old-well)
+  (let ((new-well (make-instance 'well)))
+    (with-slots ((new-pieces pieces)) new-well
+      (with-slots ((old-pieces pieces)) old-well
+        (let ((w (well-width))
+              (h (well-height)))
+          (dotimes (y h)
+            (dotimes (x w)
+              (setf (aref new-pieces (+ x (* y w)))
+                    (aref old-pieces (+ x (* y w)))))))))
+    new-well))
+
+(defun integrate-tetromino-to-well (tetromino well)
+  (let ((new-well (clone-well well)))
+    (with-slots ((well-pieces pieces)) new-well
+      (with-slots ((tetromino-pieces pieces) color) tetromino
+        (dolist (piece tetromino-pieces)
+          (with-slots (x y) piece
+            (let ((well-pos (piece-well-position tetromino piece)))
+              (setf (aref well-pieces (+ (car well-pos) 
+                                         (* (cdr well-pos) (well-width))))
+                    color))))))
+    new-well))
+
+(defun filled-line-p (pieces row-index)
+  (notany #'null (subseq pieces
+                         (* row-index      (well-width))
+                         (* (1+ row-index) (well-width)))))
+
+(defun clear-line-n (well row-index)
+  (with-slots (pieces) well
+    (if (eql row-index 0)
+        ;; clear first row
+        (loop for x from 0 to (1- (well-width))
+           do (setf (aref pieces x) nil))
+        ;; clear non-first row and ram all pieces above row-index
+        (loop for y from row-index downto 1
+           do (loop for x from 0 to (1- (well-width))		 
+                 do (setf (aref pieces (+ x (* y      (well-width))))
+                          (aref pieces (+ x (* (1- y) (well-width))))))))))
+
+(defun clear-lines (well)
+  (let ((new-well (clone-well well))
+        (filled-lines (loop for y from 0 to (1- (well-height))
+                         when (filled-line-p (slot-value well 'pieces) y) 
+                         collect y into lines and count y into lines-num
+                         finally (return (cons lines lines-num)))))
+    (mapc (curry #'clear-line-n new-well) (car filled-lines))
+    (cons (cdr filled-lines) new-well)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; piece stuff
+
+(defclass piece ()
+  ((x     :initarg :x     :initform 0)
+   (y     :initarg :y     :initform 0))
+  (:documentation "Primitive part of tetromino or well contents"))
+
+(defun make-piece (x y)
+  (make-instance 'piece :x x :y y))
+
+(defun translate-piece (piece dx dy)
+  (with-slots (x y) piece
+    (make-piece (+ x dx) (+ y dy))))
+
+(defun translate-pieces (pieces dx dy)
+  (mapcar (lambda (p) (translate-piece p dx dy)) pieces))
+
+(defun transform-piece (piece m11 m12 m21 m22)
+  (with-slots (x y) piece
+    (make-piece (+ (* x m11) (* y m21)) 
+                (+ (* x m12) (* y m22)))))
+
+(defun transform-pieces (pieces m11 m12 m21 m22)
+  (mapcar (lambda (p) (transform-piece p m11 m12 m21 m22)) pieces))
+
+(defun floor-piece-coordinates (piece)
+  (with-slots (x y) piece
+    (make-piece (floor x) (floor y))))
+
+(defun rotate-pieces (center pieces m11 m12 m21 m22)
+  (let* ((center-x     (first center)) 
+         (center-y     (second center))
+         (translated   (translate-pieces pieces (- center-x) (- center-y)))
+         (rotated      (transform-pieces translated m11 m12 m21 m22))
+         (untranslated (translate-pieces rotated center-x center-y)))
+    (mapcar #'floor-piece-coordinates untranslated)))
+
+(defun rotate-pieces-cw (center pieces)
+  (rotate-pieces center pieces 0 1 -1 0))
+
+(defun rotate-pieces-ccw (center pieces)
+  (rotate-pieces center pieces 0 -1 1 0))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; tetromino stuff
+
+(defclass tetromino ()
+  ((x               :initarg :x :initform 0
+                    :documentation "X position of tetromino in well coordinates")
+   (y               :initarg :y :initform 0
+                    :documentation "Y position of tetromino in well coordinates")
+   (center          :initarg :center 
+                    :initform (error ":CENTER must not be NIL")
+                    :documentation "Center point of tetromino relative to 
+                		    tetromino pos")
+   (pieces          :initarg :pieces 
+                    :initform (error ":PIECES must not be NIL")
+                    :documentation "List of child PIECEs")
+   (color           :initarg :color
+                    :initform sdl:*green*)
+   (falling-counter :initarg :falling-counter :initform 0)))
+
+(defun make-tetromino (x y center pieces color &optional (falling-counter 0))
+  (make-instance 'tetromino 
+                 :x x 
+                 :y y 
+                 :center center 
+                 :pieces pieces
+                 :color color
+                 :falling-counter falling-counter))
+
+(defun pieces-coords (type)
+  (ecase type
+    (I `(,sdl:*cyan*   (1.5 1.5) (0 1) (1 1) (2 1) (3 1)))
+    (J `(,sdl:*blue*   (1.0 1.0) (0 0) (0 1) (1 1) (2 1)))
+    (L `(,*orange*     (1.0 1.0) (2 0) (0 1) (1 1) (2 1)))
+    (O `(,sdl:*yellow* (0.5 0.5) (0 0) (1 0) (0 1) (1 1)))
+    (S `(,sdl:*green*  (1.0 1.0) (1 0) (2 0) (0 1) (1 1)))
+    (T `(,*purple*     (1.0 1.0) (1 0) (0 1) (1 1) (2 1)))
+    (Z `(,sdl:*red*    (1.0 1.0) (0 0) (1 0) (1 1) (2 1)))))
+
+(defun color-from-coords (coords)
+  (first coords))
+
+(defun center-from-coords (coords)
+  (second coords))
+
+(defun pieces-from-coords (coords)
+  (loop for xy in (cddr coords) 
+     collect (make-piece (first xy) (second xy))))
+
+(defun make-tetromino-of-type (type x y)
+  (let ((coords (pieces-coords type)))
+    (make-tetromino x
+                    y
+                    (center-from-coords coords)
+                    (pieces-from-coords coords)
+                    (color-from-coords  coords))))
+
+(defun point-inside-of-well-p (x y)
+  (let ((well-width  (well-width))
+        (well-height (well-height)))
+    (and (>= x 0) (< x well-width) (>= y 0) (< y well-height))))
+
+(defun tetromino-overlaps-well-pieces-p (well tetromino)
+  "Return true if tetromino clashes with pieces integrated in the well"
+  (with-slots ((well-pieces pieces)) well
+    (with-slots ((tetromino-pieces pieces)) tetromino
+      (dolist (tetromino-piece tetromino-pieces)
+        (let ((tetromino-piece-pos (piece-well-position tetromino tetromino-piece)))
+          (when (point-inside-of-well-p (car tetromino-piece-pos) 
+                                        (cdr tetromino-piece-pos))
+            (when (not (null (aref well-pieces (+ (car tetromino-piece-pos) 
+                                                  (* (cdr tetromino-piece-pos)
+                                                     (well-width))))))
+              (return t))))))))
+
+(defun pieces-left-border (tetromino-x pieces)
+  (reduce #'min pieces :key (lambda (piece) (+ tetromino-x (slot-value piece 'x)))))
+
+(defun pieces-top-border (tetromino-y pieces)
+  (reduce #'min pieces :key (lambda (piece) (+ tetromino-y (slot-value piece 'y)))))
+
+(defun pieces-right-border (tetromino-x pieces)
+  (reduce #'max pieces :key (lambda (piece) (+ tetromino-x (slot-value piece 'x)))))
+
+(defun pieces-bottom-border (tetromino-y pieces)
+  (reduce #'max pieces :key (lambda (piece) (+ tetromino-y (slot-value piece 'y)))))
+
+(defun pieces-border (tetromino-x tetromino-y pieces)
+  (values (pieces-left-border   tetromino-x pieces)
+          (pieces-top-border    tetromino-y pieces)
+          (pieces-right-border  tetromino-x pieces)
+          (pieces-bottom-border tetromino-y pieces)))
+
+(defun pieces-inside-of-well-p (tetromino-x tetromino-y pieces 
+                                &key (check-top-border nil))
+  "Returns true if tetromino don't overlapps well's borders"
+  (multiple-value-bind (l-border t-border r-border b-border)
+      (pieces-border tetromino-x tetromino-y pieces)
+    (let ((well-width  (car *well-dimensions*))
+          (well-height (cdr *well-dimensions*)))
+      (and (>= l-border 0) 
+           (or (not check-top-border) (>= t-border 0))
+           (< r-border well-width) 
+           (< b-border well-height)))))
+
+(defun tetromino-overflowed-well-p (tetromino)
+  (with-slots (y pieces) tetromino
+    (< (pieces-top-border y pieces) 0)))
+
+(defun tetromino-in-allowed-position-p (well tetromino)
+  (with-slots (x y pieces) tetromino
+    (and (pieces-inside-of-well-p x y pieces)
+         (not (tetromino-overlaps-well-pieces-p well tetromino)))))
+
+(defun move-tetromino (well tetromino dx dy &optional reset-falling-counter)
+  (let* ((actual-dx (signum dx))	
+         (actual-dy (signum dy))
+         (moved-tetromino 
+          (with-slots (x y center pieces color falling-counter) tetromino
+            (make-tetromino (+ x actual-dx) 
+                            (+ y actual-dy) 
+                            center
+                            pieces
+                            color
+                            (if reset-falling-counter
+                                0
+                                falling-counter)))))
+    (if (tetromino-in-allowed-position-p well moved-tetromino)
+        (cons :was-moved moved-tetromino)
+        (cons :was-blocked tetromino))))
+
+(defun move-tetromino-left (well tetromino)
+  (move-tetromino well tetromino -1 0))
+
+(defun move-tetromino-right (well tetromino)
+  (move-tetromino well tetromino 1 0))
+
+(defun move-tetromino-down (well tetromino)
+  (move-tetromino well tetromino 0 1 t))
+
+(defun drop-tetromino (well tetromino)
+  (let ((moved-tetromino (move-tetromino-down well tetromino)))
+    (if (eql (car moved-tetromino) :was-blocked)
+        (cdr moved-tetromino)
+        (drop-tetromino well (cdr moved-tetromino)))))
+
+(defun rotate-tetromino (well tetromino direction)
+  (let ((rotated-tetromino 
+         (with-slots (x y center pieces color falling-counter) tetromino
+           (make-tetromino x 
+                           y
+                           center 
+                           (if (< direction 0) 
+                               (rotate-pieces-ccw center pieces)
+                               (rotate-pieces-cw  center pieces))
+                           color
+                           falling-counter))))
+    (if (tetromino-in-allowed-position-p well rotated-tetromino)
+        (cons :was-moved   rotated-tetromino)
+        (cons :was-blocked tetromino))))
+
+(defun rotate-tetromino-ccw (well tetromino)
+  (rotate-tetromino well tetromino -1))
+
+(defun rotate-tetromino-cw (well tetromino)
+  (rotate-tetromino well tetromino 1))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; layout
 
 (defun calc-window-size ()
@@ -110,29 +395,6 @@ satisfies test-func"
 
 ;;; current game object
 (defvar *game* nil)
-
-;;; Entry point
-(defun blocks-main ()
-  (sdl:with-init ()
-    (let ((*game* (make-instance 'blocks-game))
-          (window-size (calc-window-size))
-          (frame-index 0))      
-      (sdl:window (car window-size) 
-                  (cdr window-size)
-                  :fps (make-instance 'sdl:fps-fixed :target-frame-rate 30))
-      (sdl:enable-key-repeat 100 50)
-                                        ;(setf (sdl:frame-rate) 30)
-      (sdl:initialise-default-font sdl:*font-5x7*)
-      (sdl:with-events (:poll)
-        (:quit-event () t)
-        (:video-expose-event () (sdl:update-display))
-        (:key-down-event (:key key) (handle-input *game* key))
-        (:idle ()
-               (incf frame-index)
-               (sdl:clear-display *background-color*)
-               (update-game *game* frame-index)
-               (draw-game *game* frame-index)
-               (sdl:update-display))))))
 
 (defclass blocks-game ()
   ((state             :initform (make-instance 'intro-state))
@@ -377,11 +639,11 @@ satisfies test-func"
                     (text "PAUSED")
                     (text-w (string-width text font))
                     (text-x (+ (car (well-window-pos)) 
-                               (/ (- (car (well-absolute-size)) 
+                               (/ (- (car (well-pixels-size)) 
                                      text-w)
                                   2)))
                     (text-y (+ (cdr (well-window-pos)) 
-                               (/ (- (cdr (well-absolute-size)) 
+                               (/ (- (cdr (well-pixels-size)) 
                                      (sdl:get-font-height :font font))
                                   2))))
                (sdl:draw-string-solid-* text
@@ -412,13 +674,13 @@ satisfies test-func"
                     2)))
          (sdl:draw-string-solid-* first-line
                                   text-x
-                                  (/ (cdr (well-absolute-size)) 3)
+                                  (/ (cdr (well-pixels-size)) 3)
                                   :font font
                                   :color sdl:*red*)
          (sdl:draw-string-solid-* second-line
                                   text-x
-                                  (- (cdr (well-absolute-size))
-                                     (/ (cdr (well-absolute-size)) 3))
+                                  (- (cdr (well-pixels-size))
+                                     (/ (cdr (well-pixels-size)) 3))
                                   :font font
                                   :color sdl:*red*)))
 
@@ -525,7 +787,6 @@ satisfies test-func"
                   color 
                   (+ (* x (car *piece-dimensions*)) window-x)
                   (+ (* y (cdr *piece-dimensions*)) window-y)))))
-                  
 
 (defun fixed-draw-box-* (x y w h &key color)
   "sdl:draw-box-* has bug and this function fixes it"
@@ -545,10 +806,14 @@ satisfies test-func"
          (<  (+ well-x x) (car *well-dimensions*))
          (<  (+ well-y y) (cdr *well-dimensions*)))))
 
+(defun well-to-pixels-coordinates (x y)
+  (cons (+ (car (well-window-pos)) (* x (car *piece-dimensions*)))
+        (+ (cdr (well-window-pos)) (* y (cdr *piece-dimensions*)))))
+
 (defun draw-tetromino-at-well-pos (tetromino-drawing-func pieces color well-x well-y)
   (let ((passed-pieces 
          (remove-if-not (curry #'piece-inside-of-well well-x well-y) pieces)))
-    (let ((window-xy (well->absolute-coordinates well-x well-y)))
+    (let ((window-xy (well-to-pixels-coordinates well-x well-y)))
       (funcall tetromino-drawing-func
                passed-pieces
                color
@@ -567,8 +832,8 @@ satisfies test-func"
 (defun draw-well-border (well well-window-pos)
   (sdl:draw-rectangle-* (1- (car well-window-pos))
                         (1- (cdr well-window-pos))
-                        (+ (car (well-absolute-size)) 2)
-                        (+ (cdr (well-absolute-size)) 2)))
+                        (+ (car (well-pixels-size)) 2)
+                        (+ (cdr (well-pixels-size)) 2)))
 
 (defun draw-well-pieces (well well-window-pos)
   (with-slots (pieces) well
@@ -593,12 +858,12 @@ satisfies test-func"
     (dotimes (x v-lines-num)
       (sdl:draw-vline (+ (car well-pos) (* (car *piece-dimensions*) (1+ x)))
                       (cdr well-pos)
-                      (1- (+ (cdr well-pos) (cdr (well-absolute-size))))
+                      (1- (+ (cdr well-pos) (cdr (well-pixels-size))))
                       :color *well-grid-color*))
     ;; horizontal lines
     (dotimes (y h-lines-num)
       (sdl:draw-hline (car well-pos)
-                      (1- (+ (car well-pos) (car (well-absolute-size))))
+                      (1- (+ (car well-pos) (car (well-pixels-size))))
                       (+ (cdr well-pos) (* (cdr *piece-dimensions*) (1+ y)))
                       :color *well-grid-color*))))
 
@@ -622,299 +887,25 @@ satisfies test-func"
 (defun clear-well ()
   (replace-well *game* (make-instance 'well)))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; well stuff
-
-(defclass well ()
-  ((pieces :initform (make-array (* (car *well-dimensions*) 
-                                    (cdr *well-dimensions*))
-                                 :initial-element nil)	   
-           :initarg :pieces))
-  (:documentation "Well is main game area where tetrominos falls to bottom"))
-
-(defun well-size ()
-  *well-dimensions*)
-
-(defun well-width ()
-  (car (well-size)))
-
-(defun well-height ()
-  (cdr (well-size)))
-
-(defun well-absolute-size ()
-  (cons (* (well-width)  (car *piece-dimensions*))
-        (* (well-height) (cdr *piece-dimensions*))))
-
-(defun well->absolute-coordinates (x y)
-  (cons (+ (car (well-window-pos)) (* x (car *piece-dimensions*)))
-        (+ (cdr (well-window-pos)) (* y (cdr *piece-dimensions*)))))
-
-(defun piece-well-position (parent-tetromino piece)
-  (with-slots ((parent-x x) (parent-y y)) parent-tetromino
-    (with-slots ((piece-x x) (piece-y y)) piece
-      (cons (+ parent-x piece-x) (+ parent-y piece-y)))))
-
-(defun clone-well (old-well)
-  (let ((new-well (make-instance 'well)))
-    (with-slots ((new-pieces pieces)) new-well
-      (with-slots ((old-pieces pieces)) old-well
-        (let ((w (well-width))
-              (h (well-height)))
-          (dotimes (y h)
-            (dotimes (x w)
-              (setf (aref new-pieces (+ x (* y w)))
-                    (aref old-pieces (+ x (* y w)))))))))
-    new-well))
-
-(defun integrate-tetromino-to-well (tetromino well)
-  (let ((new-well (clone-well well)))
-    (with-slots ((well-pieces pieces)) new-well
-      (with-slots ((tetromino-pieces pieces) color) tetromino
-        (dolist (piece tetromino-pieces)
-          (with-slots (x y) piece
-            (let ((well-pos (piece-well-position tetromino piece)))
-              (setf (aref well-pieces (+ (car well-pos) 
-                                         (* (cdr well-pos) (well-width))))
-                    color))))))
-    new-well))
-
-(defun filled-line-p (well row-index)
-  (notany #'null (subseq (slot-value well 'pieces) 
-                         (* row-index      (well-width))
-                         (* (1+ row-index) (well-width)))))
-
-(defun clear-line-n (well row-index)
-  (with-slots (pieces) well
-    (if (eql row-index 0)
-        ;; clear first row
-        (loop for x from 0 to (1- (well-width))
-           do (setf (aref pieces x) nil))
-        ;; clear non-first row and ram all pieces above row-index
-        (loop for y from row-index downto 1
-           do (loop for x from 0 to (1- (well-width))		 
-                 do (setf (aref pieces (+ x (* y      (well-width))))
-                          (aref pieces (+ x (* (1- y) (well-width))))))))))
-
-(defun clear-lines (well)
-  (let ((new-well (clone-well well))
-        (filled-lines (loop for y from 0 to (1- (well-height))
-                         when (filled-line-p well y) 
-                         collect y into lines and count y into lines-num
-                         finally (return (cons lines lines-num)))))
-    (mapc (curry #'clear-line-n new-well) (car filled-lines))
-    (cons (cdr filled-lines) new-well)))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; piece stuff
-
-(defclass piece ()
-  ((x     :initarg :x     :initform 0)
-   (y     :initarg :y     :initform 0))
-  (:documentation "Primitive part of tetromino or well contents"))
-
-(defun make-piece (x y)
-  (make-instance 'piece :x x :y y))
-
-(defun translate-piece (piece dx dy)
-  (with-slots (x y) piece
-    (make-piece (+ x dx) (+ y dy))))
-
-(defun translate-pieces (pieces dx dy)
-  (mapcar (lambda (p) (translate-piece p dx dy)) pieces))
-
-(defun transform-piece (piece m11 m12 m21 m22)
-  (with-slots (x y) piece
-    (make-piece (+ (* x m11) (* y m21)) 
-                (+ (* x m12) (* y m22)))))
-
-(defun transform-pieces (pieces m11 m12 m21 m22)
-  (mapcar (lambda (p) (transform-piece p m11 m12 m21 m22)) pieces))
-
-(defun floor-piece-coordinates (piece)
-  (with-slots (x y) piece
-    (make-piece (floor x) (floor y))))
-
-(defun floor-pieces-coordinates (pieces)
-  (mapcar #'floor-piece-coordinates pieces))
-
-(defun rotate-pieces (center pieces m11 m12 m21 m22)
-  (let* ((center-x     (first center)) 
-         (center-y     (second center))
-         (translated   (translate-pieces pieces (- center-x) (- center-y)))
-         (rotated      (transform-pieces translated m11 m12 m21 m22))
-         (untranslated (translate-pieces rotated center-x center-y)))
-    (floor-pieces-coordinates untranslated)))
-
-(defun rotate-pieces-cw (center pieces)
-  (rotate-pieces center pieces 0 1 -1 0))
-
-(defun rotate-pieces-ccw (center pieces)
-  (rotate-pieces center pieces 0 -1 1 0))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; tetromino stuff
-
-(defclass tetromino ()
-  ((x               :initarg :x :initform 0
-                    :documentation "X position of tetromino in well coordinates")
-   (y               :initarg :y :initform 0
-                    :documentation "Y position of tetromino in well coordinates")
-   (center          :initarg :center 
-                    :initform (error ":CENTER must not be NIL")
-                    :documentation "Center point of tetromino relative to 
-                		    tetromino pos")
-   (pieces          :initarg :pieces 
-                    :initform (error ":PIECES must not be NIL")
-                    :documentation "List of child PIECEs")
-   (color           :initarg :color
-                    :initform sdl:*green*)
-   (falling-counter :initarg :falling-counter :initform 0)))
-
-(defun make-tetromino (x y center pieces color &optional (falling-counter 0))
-  (make-instance 'tetromino 
-                 :x x 
-                 :y y 
-                 :center center 
-                 :pieces pieces
-                 :color color
-                 :falling-counter falling-counter))
-
-(defun pieces-coords (type)
-  (ecase type
-    (I `(,sdl:*cyan*   (1.5 1.5) (0 1) (1 1) (2 1) (3 1)))
-    (J `(,sdl:*blue*   (1.0 1.0) (0 0) (0 1) (1 1) (2 1)))
-    (L `(,*orange*     (1.0 1.0) (2 0) (0 1) (1 1) (2 1)))
-    (O `(,sdl:*yellow* (0.5 0.5) (0 0) (1 0) (0 1) (1 1)))
-    (S `(,sdl:*green*  (1.0 1.0) (1 0) (2 0) (0 1) (1 1)))
-    (T `(,*purple*     (1.0 1.0) (1 0) (0 1) (1 1) (2 1)))
-    (Z `(,sdl:*red*    (1.0 1.0) (0 0) (1 0) (1 1) (2 1)))))
-
-(defun color-from-coords (coords)
-  (first coords))
-
-(defun center-from-coords (coords)
-  (second coords))
-
-(defun pieces-from-coords (coords)
-  (loop for xy in (cddr coords) 
-     collect (make-piece (first xy) (second xy))))
-
-(defun make-tetromino-of-type (type x y)
-  (let ((coords (pieces-coords type)))
-    (make-tetromino
-     x
-     y
-     (center-from-coords coords)
-     (pieces-from-coords coords)
-     (color-from-coords  coords))))
-
-(defun point-inside-of-well-p (well x y)
-  (let ((well-width  (well-width))
-        (well-height (well-height)))
-    (and (>= x 0) (< x well-width) (>= y 0) (< y well-height))))
-
-(defun tetromino-overlaps-well-pieces-p (well tetromino)
-  "Return true if tetromino clashes with pieces integrated in the well"
-  (with-slots ((well-pieces pieces)) well
-    (with-slots ((tetromino-pieces pieces)) tetromino
-      (dolist (tetromino-piece tetromino-pieces)
-        (let ((tetromino-piece-pos (piece-well-position tetromino tetromino-piece)))
-          (when (point-inside-of-well-p well 
-                                        (car tetromino-piece-pos) 
-                                        (cdr tetromino-piece-pos))
-            (when (not (null (aref well-pieces (+ (car tetromino-piece-pos) 
-                                                  (* (cdr tetromino-piece-pos)
-                                                     (well-width))))))
-              (return t))))))))
-
-(defun pieces-left-border (tetromino-x pieces)
-  (reduce #'min pieces :key (lambda (piece) (+ tetromino-x (slot-value piece 'x)))))
-
-(defun pieces-top-border (tetromino-y pieces)
-  (reduce #'min pieces :key (lambda (piece) (+ tetromino-y (slot-value piece 'y)))))
-
-(defun pieces-right-border (tetromino-x pieces)
-  (reduce #'max pieces :key (lambda (piece) (+ tetromino-x (slot-value piece 'x)))))
-
-(defun pieces-bottom-border (tetromino-y pieces)
-  (reduce #'max pieces :key (lambda (piece) (+ tetromino-y (slot-value piece 'y)))))
-
-(defun pieces-border (tetromino-x tetromino-y pieces)
-  (values (pieces-left-border   tetromino-x pieces)
-          (pieces-top-border    tetromino-y pieces)
-          (pieces-right-border  tetromino-x pieces)
-          (pieces-bottom-border tetromino-y pieces)))
-
-(defun pieces-inside-of-well-p (tetromino-x tetromino-y pieces 
-                                &key (check-top-border nil))
-  "Returns true if tetromino don't overlapps well's borders"
-  (multiple-value-bind (l-border t-border r-border b-border)
-      (pieces-border tetromino-x tetromino-y pieces)
-    (let ((well-width  (car *well-dimensions*))
-          (well-height (cdr *well-dimensions*)))
-      (and (>= l-border 0) 
-           (or (not check-top-border) (>= t-border 0))
-           (< r-border well-width) 
-           (< b-border well-height)))))
-
-(defun tetromino-overflowed-well-p (tetromino)
-  (with-slots (y pieces) tetromino
-    (< (pieces-top-border y pieces) 0)))
-
-(defun tetromino-in-allowed-position-p (well tetromino)
-  (with-slots (x y pieces) tetromino
-    (and (pieces-inside-of-well-p x y pieces)
-         (not (tetromino-overlaps-well-pieces-p well tetromino)))))
-
-(defun move-tetromino (well tetromino dx dy &optional reset-falling-counter)
-  (let* ((actual-dx (signum dx))	
-         (actual-dy (signum dy))
-         (moved-tetromino 
-          (with-slots (x y center pieces color falling-counter) tetromino
-            (make-tetromino (+ x actual-dx) 
-                            (+ y actual-dy) 
-                            center
-                            pieces
-                            color
-                            (if reset-falling-counter
-                                0
-                                falling-counter)))))
-    (if (tetromino-in-allowed-position-p well moved-tetromino)
-        (cons :was-moved moved-tetromino)
-        (cons :was-blocked tetromino))))
-
-(defun move-tetromino-left (well tetromino)
-  (move-tetromino well tetromino -1 0))
-
-(defun move-tetromino-right (well tetromino)
-  (move-tetromino well tetromino 1 0))
-
-(defun move-tetromino-down (well tetromino)
-  (move-tetromino well tetromino 0 1 t))
-
-(defun drop-tetromino (well tetromino)
-  (let ((moved-tetromino (move-tetromino-down well tetromino)))
-    (if (eql (car moved-tetromino) :was-blocked)
-        (cdr moved-tetromino)
-        (drop-tetromino well (cdr moved-tetromino)))))
-
-(defun rotate-tetromino (well tetromino direction)
-  (let ((rotated-tetromino 
-         (with-slots (x y center pieces color falling-counter) tetromino
-           (make-tetromino x 
-                           y
-                           center 
-                           (if (< direction 0) 
-                               (rotate-pieces-ccw center pieces)
-                               (rotate-pieces-cw  center pieces))
-                           color
-                           falling-counter))))
-    (if (tetromino-in-allowed-position-p well rotated-tetromino)
-        (cons :was-moved   rotated-tetromino)
-        (cons :was-blocked tetromino))))
-
-(defun rotate-tetromino-ccw (well tetromino)
-  (rotate-tetromino well tetromino -1))
-
-(defun rotate-tetromino-cw (well tetromino)
-  (rotate-tetromino well tetromino 1))
+;;; Entry point
+(defun blocks-main ()
+  (sdl:with-init ()
+    (let ((*game* (make-instance 'blocks-game))
+          (window-size (calc-window-size))
+          (frame-index 0))      
+      (sdl:window (car window-size) 
+                  (cdr window-size)
+                  :fps (make-instance 'sdl:fps-fixed :target-frame-rate 30))
+      (sdl:enable-key-repeat 100 50)
+                                        ;(setf (sdl:frame-rate) 30)
+      (sdl:initialise-default-font sdl:*font-5x7*)
+      (sdl:with-events (:poll)
+        (:quit-event () t)
+        (:video-expose-event () (sdl:update-display))
+        (:key-down-event (:key key) (handle-input *game* key))
+        (:idle ()
+               (incf frame-index)
+               (sdl:clear-display *background-color*)
+               (update-game *game* frame-index)
+               (draw-game *game* frame-index)
+               (sdl:update-display))))))
