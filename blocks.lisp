@@ -1,11 +1,11 @@
 ;;;;
 ;;;; TODO: + current tetromino falling
-;;;;       - levels
+;;;;       + levels
 ;;;;       + rows elimination
 ;;;;       ? rows elimination animation
-;;;;       - tetromino spawning algorithm
+;;;;       + tetromino spawning algorithm
 ;;;;       - tetromino sprites
-;;;;       - GUI (well area, points, next tetrominos list)
+;;;;       + GUI (well area, points, next tetrominos list)
 ;;;;       + tetromino dropping
 ;;;;       + current tetromino well bottom projection 
 ;;;;       - enhanced rotating system
