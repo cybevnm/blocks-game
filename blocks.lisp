@@ -15,6 +15,9 @@
 ;;;; defvar       - bind value only on first evaluation
 (declaim (optimize (speed 0) (safety 3) (debug 3)))
 
+(defpackage :blocks-game
+  (:use :common-lisp))
+
 (in-package :blocks-game)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -31,6 +34,7 @@
 
 (defparameter *orange* (sdl:color :r 255 :g 127 :b 0))
 (defparameter *purple* (sdl:color :r 128 :g 0   :b 128))
+(defparameter *light-blue* (sdl:color :r 50 :g 50 :b 255))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; common stuff
@@ -228,10 +232,12 @@ satisfies test-func"
                  :color color
                  :falling-counter falling-counter))
 
+
+
 (defun pieces-coords (type)
   (ecase type
     (I `(,sdl:*cyan*   (1.5 1.5) (0 1) (1 1) (2 1) (3 1)))
-    (J `(,sdl:*blue*   (1.0 1.0) (0 0) (0 1) (1 1) (2 1)))
+    (J `(,*light-blue*   (1.0 1.0) (0 0) (0 1) (1 1) (2 1)))
     (L `(,*orange*     (1.0 1.0) (2 0) (0 1) (1 1) (2 1)))
     (O `(,sdl:*yellow* (0.5 0.5) (0 0) (1 0) (0 1) (1 1)))
     (S `(,sdl:*green*  (1.0 1.0) (1 0) (2 0) (0 1) (1 1)))
@@ -864,7 +870,7 @@ satisfies test-func"
 
 (defun draw-well (well)
   (draw-well-pieces well (well-window-pos))
-  (draw-well-grid   well)
+  ;(draw-well-grid   well)
   (draw-well-border well (well-window-pos)))
 
 (defun dump-well-to-stdout (well)
