@@ -70,7 +70,7 @@ satisfies test-func"
            (elmt-ind (random list-len)))
       (cons (nth elmt-ind list)
             (random-list-permutation (append (butlast list (- list-len elmt-ind))
-                                             (nthcdr (+ elmt-ind 1) list)))))))
+                                             (nthcdr (1+ elmt-ind) list)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; well stuff
@@ -128,7 +128,7 @@ satisfies test-func"
 
 (defun clear-line-n (well row-index)
   (with-slots (pieces) well
-    (if (eql row-index 0)
+    (if (= row-index 0)
         ;; clear first row
         (loop for x from 0 to (1- (well-width))
            do (setf (aref pieces x) nil))
@@ -434,7 +434,7 @@ satisfies test-func"
 (defclass intro-state (game-state) ())
 
 (defmethod handle-input ((state intro-state) key)
-  (when (eq key :sdl-key-space)
+  (when (eql key :sdl-key-space)
     (setf (slot-value *game* 'state) (make-instance 'playing-state))))
 
 (defparameter *application-root-path*
@@ -548,7 +548,7 @@ satisfies test-func"
   (get-level-for-score (calc-game-score)))
 
 (defmethod update-game ((state playing-state) frame-index)
-  (when (not (slot-value state 'paused))
+  (unless (slot-value state 'paused)
     (with-slots (curr-tetromino well) *game*
       (let ((moving-result (fall-tetromino curr-tetromino well (get-game-level))))
         (handle-moved-tetromino :vertical 
@@ -738,7 +738,7 @@ satisfies test-func"
 
 (defun spawn-next-tetromino (tetrominos-types-queue)
   (let ((actual-tetrominos-types-queue
-         (if (= (length tetrominos-types-queue) 1)
+         (if (null (cdr tetrominos-types-queue))
              (append tetrominos-types-queue (make-tetrominos-types-queue))
              tetrominos-types-queue)))
     (cons (make-tetromino-of-type (car actual-tetrominos-types-queue) 5 -2)
@@ -747,7 +747,7 @@ satisfies test-func"
 (defun handle-moved-tetromino (moving-type moving-remarks moved-tetromino well)
   (ecase moving-remarks
     (:was-moved   (update-game-objects well moved-tetromino nil))
-    (:was-blocked (when (eq moving-type :vertical) 
+    (:was-blocked (when (eql moving-type :vertical) 
                     (if (tetromino-overflowed-well-p moved-tetromino)
                         (setf (slot-value *game* 'state) (make-instance 'game-over-state))
                         (let ((spawning-result
