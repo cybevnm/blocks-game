@@ -12,7 +12,6 @@
 (defparameter *piece-dimensions* '(15 . 15))
 (defparameter *background-color*  sdl:*black*)
 (defparameter *well-grid-color*   (sdl:color :r 128 :g 128 :b 128))
-(defparameter *curr-frame-index*  0)
 
 (defparameter *margin* 20)
 (defparameter *stats-width* 70)
@@ -20,6 +19,9 @@
 (defparameter *orange* (sdl:color :r 255 :g 127 :b 0))
 (defparameter *purple* (sdl:color :r 128 :g 0   :b 128))
 (defparameter *light-blue* (sdl:color :r 50 :g 50 :b 255))
+
+(defparameter *levels-falling-thresholds* '(50 40  30  20   10   5    3))
+(defparameter *levels-scores*             '(0  250 500 1000 2000 4000 8000))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; common stuff
@@ -536,8 +538,6 @@ satisfies test-func"
       *game*
     (calc-score single-clears-num double-clears-num triple-clears-num quadruples-num)))
 
-(defparameter *levels-scores* '(0 250 500 1000 2000 4000 8000))
-
 (defun get-level-for-score (score)
   (or (position score
                 *levels-scores* 
@@ -706,8 +706,6 @@ satisfies test-func"
       (:sdl-key-p (with-slots (paused) state
                     (print "pause triggered")
                     (setf paused (not paused)))))))
-
-(defparameter *levels-falling-thresholds* '(50 40 30 20 10 5 3))
 
 (defun get-falling-threshold-for-level (level)
   (let ((thresholds-list-len (length *levels-falling-thresholds*)))
