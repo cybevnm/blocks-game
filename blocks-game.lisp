@@ -1,3 +1,6 @@
+;;;; Simple tetris-like game written in common lisp
+;;;; Copyright (C) 2013 cybevnm
+
 (declaim (optimize (speed 0) (safety 3) (debug 3)))
 
 (defpackage :blocks-game

@@ -1,0 +1,4 @@
+BLOCKS
+
+Simple tetris-like game written in common lisp. 
+Uses lispbuilder to get the input, do rendering and other stuff.
