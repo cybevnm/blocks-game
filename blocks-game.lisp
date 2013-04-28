@@ -427,7 +427,7 @@ satisfies test-func"
 (defmethod update-game (state frame-index))
 (defmethod update-game :before (state frame-index)
   (handle-slime-requests))
-           
+
 (defgeneric draw-game (state frame-index))
 (defmethod draw-game (state frame-index))
 
@@ -455,7 +455,7 @@ satisfies test-func"
                                                                char-height)))
                     :color-key (sdl:color :r 99 :g 0 :b 0)
                     :filename (sdl:create-path file-name *application-root-path*)))))
-  
+
 (defun make-biggest-font ()
   (make-font "biggest-font.bmp" 32 40))
 
@@ -470,12 +470,12 @@ satisfies test-func"
 
 (defun calc-string-left-border (str font)
   (/ (- (car (calc-window-size)) (string-width str font)) 2))
-  
+
 (defun draw-big-title ()
   (let* ((big-font (make-biggest-font))
          (title-text "BLOCKS")
          (title-colors `(,sdl:*red*   ,*orange*   ,sdl:*yellow* 
-                         ,sdl:*green* ,sdl:*blue* ,*purple*))
+                                      ,sdl:*green* ,sdl:*blue* ,*purple*))
          (title-left (calc-string-left-border title-text big-font)))
     (loop 
        for char across title-text
@@ -513,8 +513,8 @@ satisfies test-func"
 
 (defmethod draw-game ((state intro-state) frame-index)
   (draw-big-title)
-    (when (> (square-func frame-index 30) 0) 
-      (draw-press-space-to-start))
+  (when (> (square-func frame-index 30) 0) 
+    (draw-press-space-to-start))
   (draw-author))
 
 (defclass playing-state (game-state) 
@@ -543,7 +543,7 @@ satisfies test-func"
                 *levels-scores* 
                 :test (lambda (game-score level-score) (> level-score game-score)))
       (1- (length *levels-scores*))))
-  
+
 (defun get-game-level ()
   (get-level-for-score (calc-game-score)))
 
@@ -621,22 +621,22 @@ satisfies test-func"
 (defun draw-paused-if-required (paused frame-index)
   (when paused
     (when (> (square-func frame-index 30) 0) 
-             (let* ((font (make-medium-font))
-                    (text "PAUSED")
-                    (text-w (string-width text font))
-                    (text-x (+ (car (well-window-pos)) 
-                               (/ (- (car (well-pixels-size)) 
-                                     text-w)
-                                  2)))
-                    (text-y (+ (cdr (well-window-pos)) 
-                               (/ (- (cdr (well-pixels-size)) 
-                                     (sdl:get-font-height :font font))
-                                  2))))
-               (sdl:draw-string-solid-* text
-                                        text-x
-                                        text-y
-                                        :font font
-                                        :color sdl:*red*)))))
+      (let* ((font (make-medium-font))
+             (text "PAUSED")
+             (text-w (string-width text font))
+             (text-x (+ (car (well-window-pos)) 
+                        (/ (- (car (well-pixels-size)) 
+                              text-w)
+                           2)))
+             (text-y (+ (cdr (well-window-pos)) 
+                        (/ (- (cdr (well-pixels-size)) 
+                              (sdl:get-font-height :font font))
+                           2))))
+        (sdl:draw-string-solid-* text
+                                 text-x
+                                 text-y
+                                 :font font
+                                 :color sdl:*red*)))))
 
 (defmethod draw-game ((state playing-state) frame-index)
   (with-slots (well curr-tetromino tetrominos-types-queue) *game*
@@ -658,17 +658,17 @@ satisfies test-func"
          (second-line "OVER")
          (text-x (/ (- (car (calc-window-size)) (string-width first-line font))
                     2)))
-         (sdl:draw-string-solid-* first-line
-                                  text-x
-                                  (/ (cdr (well-pixels-size)) 3)
-                                  :font font
-                                  :color sdl:*red*)
-         (sdl:draw-string-solid-* second-line
-                                  text-x
-                                  (- (cdr (well-pixels-size))
-                                     (/ (cdr (well-pixels-size)) 3))
-                                  :font font
-                                  :color sdl:*red*)))
+    (sdl:draw-string-solid-* first-line
+                             text-x
+                             (/ (cdr (well-pixels-size)) 3)
+                             :font font
+                             :color sdl:*red*)
+    (sdl:draw-string-solid-* second-line
+                             text-x
+                             (- (cdr (well-pixels-size))
+                                (/ (cdr (well-pixels-size)) 3))
+                             :font font
+                             :color sdl:*red*)))
 
 (defmethod draw-game ((state game-over-state) frame-index)
   (draw-game-over))
@@ -711,7 +711,7 @@ satisfies test-func"
   (let ((thresholds-list-len (length *levels-falling-thresholds*)))
     (nth (if (> level thresholds-list-len) (1- thresholds-list-len) level)
          *levels-falling-thresholds*)))
-  
+
 (defun first-or-null (lst)
   (and lst (first lst)))
 
@@ -755,7 +755,7 @@ satisfies test-func"
                                                (car spawning-result)
                                                (cdr spawning-result))))))
     (:nothing-happened (update-game-objects well moved-tetromino nil))))
-  
+
 (defun draw-piece (drawing-func color window-x window-y)
   (funcall drawing-func 
            window-x 
@@ -812,7 +812,7 @@ satisfies test-func"
 
 (defun draw-projected-tetromino-at-well-pos (pieces color well-x well-y) 
   (draw-tetromino-at-well-pos #'draw-projected-tetromino pieces color well-x well-y))
- 
+
 (defun draw-well-border (well well-window-pos)
   (sdl:draw-rectangle-* (1- (car well-window-pos))
                         (1- (cdr well-window-pos))
@@ -853,7 +853,7 @@ satisfies test-func"
 
 (defun draw-well (well)
   (draw-well-pieces well (well-window-pos))
-  ;(draw-well-grid   well)
+                                        ;(draw-well-grid   well)
   (draw-well-border well (well-window-pos)))
 
 (defun dump-well-to-stdout (well)
