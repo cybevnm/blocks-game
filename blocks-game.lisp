@@ -412,13 +412,13 @@ satisfies test-func"
                            (3 'triple-clears-num)
                            (4 'quadruples-num)))))
 
-(defmethod handle-input ((game blocks-game) key)
+(defmethod handle-game-input ((game blocks-game) key)
   (handle-input (slot-value game 'state) key))
 
-(defmethod update-game ((game blocks-game) frame-index)
+(defmethod update-whole-game ((game blocks-game) frame-index)
   (update-game (slot-value game 'state) frame-index))
 
-(defmethod draw-game ((game blocks-game) frame-index)
+(defmethod draw-whole-game ((game blocks-game) frame-index)
   (draw-game (slot-value game 'state) frame-index))
 
 (defclass game-state () ())
@@ -444,30 +444,6 @@ satisfies test-func"
   (make-pathname :directory (pathname-directory #.(or *compile-file-truename*
                                                       *load-truename*))))
 
-(defun make-font (file-name char-width char-height)
-  (let ((chars-num 48))
-    (sdl:initialise-font 
-     (make-instance 'sdl:simple-font-definition
-                    :width char-width :height char-height
-                    :character-map "ABCDEFGHIJKLMNOPQRSTUVWXYZ:'!?_-,.()#~0123456789"
-                    :character-mask (loop for y from 0 below 1
-                                       append (loop for x from 0 below chars-num
-                                                 collect (list (* x char-width) 
-                                                               (* y char-height) 
-                                                               char-width 
-                                                               char-height)))
-                    :color-key (sdl:color :r 99 :g 0 :b 0)
-                    :filename (sdl:create-path file-name *application-root-path*)))))
-
-(defun make-biggest-font ()
-  (make-font "biggest-font.bmp" 32 40))
-
-(defun make-big-font ()
-  (make-font "big-font.bmp" 24 30))
-
-(defun make-medium-font ()
-  (make-font "medium-font.bmp" 16 20))
-
 (defun string-width (str font)
   (* (length str) (sdl:char-width font)))
 
@@ -475,39 +451,36 @@ satisfies test-func"
   (/ (- (car (calc-window-size)) (string-width str font)) 2))
 
 (defun draw-big-title ()
-  (let* ((big-font (make-biggest-font))
-         (title-text "BLOCKS")
+  (let* ((title-text "BLOCKS")
          (title-colors `(,sdl:*red*   ,*orange*   ,sdl:*yellow* 
                                       ,sdl:*green* ,sdl:*blue* ,*purple*))
-         (title-left (calc-string-left-border title-text big-font)))
+         (title-left (calc-string-left-border title-text *biggest-font*)))
     (loop 
        for char across title-text
        for color in title-colors
        for index from 0 
        do (sdl:draw-string-solid-* (string char)
-                                   (+ (* index (sdl:char-width big-font)) title-left)
+                                   (+ (* index (sdl:char-width *biggest-font*)) title-left)
                                    30
-                                   :font big-font
+                                   :font *biggest-font*
                                    :color color))))
 
 (defun draw-press-space-to-start ()
-  (let* ((font (make-medium-font))
-         (text "PRESS SPACE")
-         (left (calc-string-left-border text font)))
+  (let* ((text "PRESS SPACE")
+         (left (calc-string-left-border text *medium-font*)))
     (sdl:draw-string-solid-* text
                              left
                              (/ (cdr (calc-window-size)) 2)
-                             :font font
+                             :font *medium-font*
                              :color *orange*)))
 
 (defun draw-author ()
-  (let* ((font (make-medium-font))
-         (text "BY CYBEVNM")
-         (left (calc-string-left-border text font)))
+  (let* ((text "BY CYBEVNM")
+         (left (calc-string-left-border text *medium-font*)))
     (sdl:draw-string-solid-* text 
                              left
                              (- (cdr (calc-window-size)) 40)
-                             :font font
+                             :font *medium-font*
                              :color *purple*)))
 
 (defun square-func (x period)
@@ -563,12 +536,12 @@ satisfies test-func"
   (sdl:draw-string-solid-* "NEXT" 
                            *margin* 
                            *margin* 
-                           :font (make-medium-font) 
+                           :font *medium-font*
                            :color sdl:*red*)
   (draw-filled-tetromino (slot-value next-tetromino 'pieces) 
                          (slot-value next-tetromino 'color)
                          *margin*
-                         (+ *margin* (sdl:char-width (make-medium-font)) *margin*)))
+                         (+ *margin* (sdl:char-width *medium-font*) *margin*)))
 
 (defun peek-next-tetromino ()
   (make-tetromino-of-type (car (slot-value *game* 'tetrominos-types-queue)) 0 0))
@@ -577,68 +550,65 @@ satisfies test-func"
   (slot-value (peek-next-tetromino) 'color))
 
 (defun draw-score ()
-  (let* ((font (make-medium-font))
-         (text-y (+ *margin*
-                    (sdl:get-font-height :font font)
+  (let* ((text-y (+ *margin*
+                    (sdl:get-font-height :font *medium-font*)
                     *margin*
                     (* 4 (cdr *piece-dimensions*)))))
     (sdl:draw-string-solid-* "SCORE"
                              *margin*
                              text-y
-                             :font font
+                             :font *medium-font*
                              :color sdl:*red*)
     (with-slots (single-clears-num double-clears-num triple-clears-num quadruples-num)
         *game*
       (sdl:draw-string-solid-* (write-to-string (calc-game-score))
                                *margin*
                                (+ text-y 
-                                  (sdl:get-font-height :font font) 
+                                  (sdl:get-font-height :font *medium-font*) 
                                   *margin*)
-                               :font font
+                               :font *medium-font*
                                :color (next-tetromino-color)))))
 
 (defun draw-level ()
-  (let* ((font (make-medium-font))
-         (text-y (+ *margin*
-                    (sdl:get-font-height :font font)
+  (let* ((text-y (+ *margin*
+                    (sdl:get-font-height :font *medium-font*)
                     *margin*
                     (* 4 (cdr *piece-dimensions*))
                     *margin*
-                    (sdl:get-font-height :font font)
+                    (sdl:get-font-height :font *medium-font*)
                     *margin*
-                    (sdl:get-font-height :font font)
+                    (sdl:get-font-height :font *medium-font*)
                     *margin*)))
     (sdl:draw-string-solid-* "LEVEL"
                              *margin*
                              text-y
-                             :font font
+                             :font *medium-font*
                              :color sdl:*red*)
     (sdl:draw-string-solid-* (write-to-string (get-game-level))
                              *margin*
                              (+ text-y
-                                (sdl:get-font-height :font font)                                
+                                (sdl:get-font-height :font *medium-font*)
                                 *margin*)
-                             :font font
+                             :font *medium-font*
                              :color (next-tetromino-color))))
 
 (defun draw-paused-if-required (paused frame-index)
   (when paused
     (when (> (square-func frame-index 30) 0) 
-      (let* ((font (make-medium-font))
-             (text "PAUSED")
-             (text-w (string-width text font))
+      (let* ((text "PAUSED")
+             (text-w (string-width text *medium-font*))
              (text-x (+ (car (well-window-pos)) 
                         (/ (- (car (well-pixels-size)) 
                               text-w)
                            2)))
              (text-y (+ (cdr (well-window-pos)) 
                         (/ (- (cdr (well-pixels-size)) 
-                              (sdl:get-font-height :font font))
+                              (sdl:get-font-height :font *medium-font*))
                            2))))
         (sdl:draw-string-solid-* text
                                  text-x
                                  text-y
-                                 :font font
+                                 :font *medium-font*
                                  :color sdl:*red*)))))
 
 (defmethod draw-game ((state playing-state) frame-index)
@@ -875,6 +845,39 @@ satisfies test-func"
 (defun clear-well ()
   (replace-well *game* (make-instance 'well)))
 
+(defun make-font (file-name char-width char-height)
+  (let ((chars-num 48))
+    (sdl:initialise-font 
+     (make-instance 'sdl:simple-font-definition
+                    :width char-width :height char-height
+                    :character-map "ABCDEFGHIJKLMNOPQRSTUVWXYZ:'!?_-,.()#~0123456789"
+                    :character-mask (loop for y from 0 below 1
+                                       append (loop for x from 0 below chars-num
+                                                 collect (list (* x char-width) 
+                                                               (* y char-height) 
+                                                               char-width 
+                                                               char-height)))
+                    :color-key (sdl:color :r 99 :g 0 :b 0)
+                    :filename (sdl:create-path file-name *application-root-path*)))))
+
+(defun make-biggest-font ()
+  (make-font "biggest-font.bmp" 32 40))
+
+(defun make-big-font ()
+  (make-font "big-font.bmp" 24 30))
+
+(defun make-medium-font ()
+  (make-font "medium-font.bmp" 16 20))
+
+(defparameter *biggest-font* nil)
+(defparameter *big-font* nil)
+(defparameter *medium-font* nil)
+
+(defun initialise-fonts ()
+  (setf *biggest-font* (make-biggest-font)
+        *big-font*     (make-big-font)
+        *medium-font*  (make-medium-font)))
+
 ;;; Entry point
 (defun blocks-main ()
   (sdl:with-init ()
@@ -887,13 +890,14 @@ satisfies test-func"
       (sdl:enable-key-repeat 100 50)
                                         ;(setf (sdl:frame-rate) 30)
       (sdl:initialise-default-font sdl:*font-5x7*)
+      (initialise-fonts)
       (sdl:with-events (:poll)
         (:quit-event () t)
         (:video-expose-event () (sdl:update-display))
-        (:key-down-event (:key key) (handle-input *game* key))
+        (:key-down-event (:key key) (handle-game-input *game* key))
         (:idle ()
                (incf frame-index)
                (sdl:clear-display *background-color*)
-               (update-game *game* frame-index)
-               (draw-game *game* frame-index)
+               (update-whole-game *game* frame-index)
+               (draw-whole-game *game* frame-index)
                (sdl:update-display))))))
