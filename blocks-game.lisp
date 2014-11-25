@@ -437,8 +437,9 @@ satisfies test-func"
 (defclass intro-state (game-state) ())
 
 (defmethod handle-input ((state intro-state) key)
-  (when (eql key :sdl-key-space)
-    (setf (slot-value *game* 'state) (make-instance 'playing-state))))
+  (case key
+    (:sdl-key-space (setf (slot-value *game* 'state) (make-instance 'playing-state)))
+    (:sdl-key-q (sdl:push-quit-event))))
 
 (defparameter *application-root-path*
   (make-pathname :directory (pathname-directory #.(or *compile-file-truename*
