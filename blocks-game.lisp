@@ -674,7 +674,7 @@ satisfies test-func"
 (defun handle-common-keys (key state)
   (with-slots (well curr-tetromino) *game*
     (case key
-      (:sdl-ley-q (sdl:push-quit-event)) ; don't work. why ?
+      (:sdl-key-q (sdl:push-quit-event))
       (:sdl-key-d (dump-well-to-stdout well))
       (:sdl-key-c (clear-well))
       (:sdl-key-p (with-slots (paused) state
