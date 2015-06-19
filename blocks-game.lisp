@@ -640,6 +640,10 @@ satisfies test-func"
 
 (defclass game-over-state (game-state) ())
 
+(defmethod handle-input ((state game-over-state) key)
+  (case key
+    (:sdl-key-q (sdl:push-quit-event))))
+
 (defun draw-game-over ()
   (let* ((first-line "GAME")
          (second-line "OVER")
