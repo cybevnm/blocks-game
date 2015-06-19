@@ -499,7 +499,7 @@ satisfies test-func"
                              :color *purple*)))
 
 (defun square-func (x period)
-  "Returns -1 or 0 depending on x"
+  "Returns -1, 0 or 1 depending on x"
   (signum (- (mod (- x (/ period 2)) period) (/ period 2))))
 
 (defmethod draw-game ((state intro-state) frame-index)
