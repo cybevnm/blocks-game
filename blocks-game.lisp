@@ -441,10 +441,24 @@ satisfies test-func"
     (:sdl-key-space (setf (slot-value *game* 'state) (make-instance 'playing-state)))
     (:sdl-key-q (sdl:push-quit-event))))
 
-(defparameter *application-root-path*
-  (make-pathname :directory (pathname-directory #.(or *compile-file-truename*
-                                                      *load-truename*))))
+(defun executable-file-path ()
+  #+linux (osicat:read-link #p"/proc/self/exe")
+  #-linux (error (concat "executable-file-path is "
+                         "not supported for this platform yet")))
+(defparameter *sources-dir-path*
+  (make-pathname :name nil :type nil
+                 :defaults #.(or *compile-file-truename*
+                                 *load-truename*)))
 
+(defparameter *assets-dir-type* :development-dir
+  "Specifies where to search for assets, can take two values:
+   :development-dir - is directory where .lisp sources files are,
+   :executable-dir - is directory where dumped image is.")
+(defun assets-dir-path ()
+  (ecase *assets-dir-type*
+    (:development-dir *sources-dir-path*)
+    (:executable-dir (make-pathname :name nil :type nil
+                                    :defaults (executable-file-path)))))
 (defun string-width (str font)
   (* (length str) (sdl:char-width font)))
 
@@ -627,21 +641,20 @@ satisfies test-func"
 (defclass game-over-state (game-state) ())
 
 (defun draw-game-over ()
-  (let* ((font (make-biggest-font))
-         (first-line "GAME")
+  (let* ((first-line "GAME")
          (second-line "OVER")
-         (text-x (/ (- (car (calc-window-size)) (string-width first-line font))
+         (text-x (/ (- (car (calc-window-size)) (string-width first-line *biggest-font*))
                     2)))
     (sdl:draw-string-solid-* first-line
                              text-x
                              (/ (cdr (well-pixels-size)) 3)
-                             :font font
+                             :font *biggest-font*
                              :color sdl:*red*)
     (sdl:draw-string-solid-* second-line
                              text-x
                              (- (cdr (well-pixels-size))
                                 (/ (cdr (well-pixels-size)) 3))
-                             :font font
+                             :font *biggest-font*
                              :color sdl:*red*)))
 
 (defmethod draw-game ((state game-over-state) frame-index)
@@ -859,25 +872,16 @@ satisfies test-func"
                                                                char-width 
                                                                char-height)))
                     :color-key (sdl:color :r 99 :g 0 :b 0)
-                    :filename (sdl:create-path file-name *application-root-path*)))))
+                    :filename (sdl:create-path file-name
+                                               (assets-dir-path))))))
 
-(defun make-biggest-font ()
-  (make-font "biggest-font.bmp" 32 40))
-
-(defun make-big-font ()
-  (make-font "big-font.bmp" 24 30))
-
-(defun make-medium-font ()
-  (make-font "medium-font.bmp" 16 20))
-
-(defparameter *biggest-font* nil)
-(defparameter *big-font* nil)
-(defparameter *medium-font* nil)
-
+(defvar *biggest-font* nil)
+(defvar *big-font* nil)
+(defvar *medium-font* nil)
 (defun initialise-fonts ()
-  (setf *biggest-font* (make-biggest-font)
-        *big-font*     (make-big-font)
-        *medium-font*  (make-medium-font)))
+  (setf *biggest-font* (make-font "biggest-font.bmp" 32 40)
+        *big-font*     (make-font "big-font.bmp" 24 30)
+        *medium-font*  (make-font "medium-font.bmp" 16 20)))
 
 ;;; Entry point
 (defun blocks-main ()
@@ -902,3 +906,7 @@ satisfies test-func"
                (update-whole-game *game* frame-index)
                (draw-whole-game *game* frame-index)
                (sdl:update-display))))))
+(defun blocks-image-main ()
+  "Should be used to start application from the dumped image"
+  (let ((*assets-dir-type* :executable-dir))
+    (blocks-main)))
